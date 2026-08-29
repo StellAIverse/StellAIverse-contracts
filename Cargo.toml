@@ -15,7 +15,6 @@ members = [
     "contracts/staking",
     "contracts/token-vesting",
     "contracts/oracle",
-    "contracts/faucet",
     "contracts/bridge",
     "contracts/vault",
     "contracts/portfolio-manager",

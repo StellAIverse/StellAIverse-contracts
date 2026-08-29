@@ -9,12 +9,12 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-soroban-sdk = "21.0.0"
+soroban-sdk = { workspace = true }
 stellai_lib = { path = "../../lib" }
 shared = { path = "../../shared" }
 
 [dev-dependencies]
-soroban-sdk = { version = "21.0.0", features = ["testutils"] }
+soroban-sdk = { workspace = true, features = ["testutils"] }
 shared = { path = "../../shared", features = ["testutils"] }
 
 [features]
