@@ -255,7 +255,7 @@ pub struct BridgeTransaction {
     pub dest_chain: SupportedChain,
     pub sender: Address,
     pub recipient: Address,
-    pub asset_address: String,
+    pub asset_code: String,
     pub amount: i128,
     pub fee: i128,
     pub status: BridgeStatus,

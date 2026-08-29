@@ -836,12 +836,7 @@ impl BridgeGateway {
         disputer.require_auth();
 
         assert!(!reason.is_empty(), "Reason required");
-        // Check reason length (approximate: each char is 1 byte in Soroban String)
-        let reason_str: &str = &reason.to_string();
-        assert!(
-            reason_str.len() <= MAX_DISPUTE_REASON_LENGTH,
-            "Reason too long"
-        );
+        assert!(reason.len() <= MAX_DISPUTE_REASON_LENGTH, "Reason too long");
 
         let tx = storage::get_transaction(&env, tx_id).expect("Transaction not found");
 
@@ -895,7 +890,7 @@ impl BridgeGateway {
         storage::set_dispute(&env, &dispute);
 
         // If resolution is "cancel", cancel the transaction
-        if resolution == "cancel" {
+        if resolution == String::from_str(&env, "cancel") {
             if let Some(mut tx) = storage::get_transaction(&env, dispute.tx_id) {
                 tx.status = BridgeStatus::Cancelled;
                 storage::set_transaction(&env, &tx);

@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Env, String, Vec};
+use soroban_sdk::{contracttype, Address, Env, String, Vec};
 
 use shared::{
     BridgeConfig, BridgeDispute, BridgeFeeTier, BridgeTransaction, EmergencyConfig, LiquidityPool,
