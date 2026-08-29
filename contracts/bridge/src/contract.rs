@@ -4,7 +4,7 @@ use shared::{
     BridgeConfig, BridgeDirection, BridgeDispute, BridgeFeeTier, BridgeStatus, BridgeTransaction,
     EmergencyConfig, LiquidityPool, LiquidityProviderDeposit, SupportedChain, ValidatorSetConfig,
     ValidatorSignature, WrappedAsset, MAX_DISPUTE_REASON_LENGTH, MAX_FEE_BPS,
-    MAX_VALIDATORS_PER_CHAIN, MIN_FEE_BPS, MIN_VALIDATORS_PER_CHAIN,
+    MAX_VALIDATORS_PER_CHAIN, MIN_VALIDATORS_PER_CHAIN,
 };
 
 use crate::storage;
