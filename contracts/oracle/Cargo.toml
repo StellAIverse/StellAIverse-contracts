@@ -1,23 +1,15 @@
 [package]
 name = "oracle"
 version = "0.1.0"
-description = " contract for StellAIverse"
-authors = ["StellAIverse Team"]
 edition = "2021"
+publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-soroban-sdk = "21.0.0"
+soroban-sdk = { workspace = true }
 stellai_lib = { path = "../../lib" }
-shared = { path = "../../shared", features = ["testutils"] }
-
 
 [dev-dependencies]
-soroban-sdk = { version = "21.0.0", features = ["testutils"] }
-shared = { path = "../../shared" }
-
-
-[features]
-testutils = ["soroban-sdk/testutils"]
+soroban-sdk = { workspace = true, features = ["testutils"] }

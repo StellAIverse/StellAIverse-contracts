@@ -1,0 +1,18 @@
+[package]
+name = "stellai-formal-verification"
+version = "0.1.0"
+edition = "2021"
+description = "Kani formal verification proof harnesses for stellAIverse critical contracts"
+publish = false
+
+# This crate is intentionally NOT part of the workspace to avoid including
+# it in the wasm32-unknown-unknown build target used for Soroban contracts.
+# Run `cargo kani` from this directory directly.
+
+[dependencies]
+kani = { version = "0.67.0", optional = true }
+
+[dev-dependencies]
+# Kani is installed as a standalone toolchain; no crate dependency needed.
+# Proof harnesses are annotated with #[kani::proof] which is recognized
+# by the `cargo kani` command.

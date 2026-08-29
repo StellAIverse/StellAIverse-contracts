@@ -1,6 +1,6 @@
-# Contributing to StellAIverse Contracts
+# Contributing to AIverse Contracts
 
-We welcome contributions to the StellAIverse Contracts project! Please follow the guidelines below to ensure a smooth collaboration process.
+We welcome contributions to the AIverse Contracts project! Please follow the guidelines below to ensure a smooth collaboration process.
 
 ## Development Workflow
 

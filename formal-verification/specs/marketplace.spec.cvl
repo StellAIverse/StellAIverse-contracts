@@ -1,0 +1,155 @@
+// =============================================================================
+// Formal Verification Specifications — Marketplace Contract
+// stellAIverse-contracts | Issue #104
+// Tool: Certora Prover (CVL)
+// =============================================================================
+
+methods {
+    // State readers
+    function totalFunds()                               external returns (uint128) envfree;
+    function sellerBalance(address seller)              external returns (uint128) envfree;
+    function buyerEscrowed(address buyer)               external returns (uint128) envfree;
+    function royaltyBps(uint64 agentId)                 external returns (uint16)  envfree;
+    function listingPrice(uint64 agentId)               external returns (uint128) envfree;
+    function listingActive(uint64 agentId)              external returns (bool)    envfree;
+    function protocolFeePool()                          external returns (uint128) envfree;
+
+    // Mutating functions
+    function listAgent(uint64 agentId, uint128 price, uint16 royaltyBps) external;
+    function purchaseAgent(uint64 agentId)              external payable;
+    function cancelListing(uint64 agentId)              external;
+    function withdrawSeller(uint128 amount)             external;
+    function setRoyalty(uint64 agentId, uint16 bps)    external;
+}
+
+// Helper: sum of all balances in the system
+// In production, ghost variables track this incrementally
+ghost uint128 sumAllBalances;
+
+hook Sstore sellerBalance[KEY address s] uint128 newVal (uint128 oldVal) {
+    sumAllBalances = sumAllBalances - oldVal + newVal;
+}
+hook Sstore buyerEscrowed[KEY address b] uint128 newVal (uint128 oldVal) {
+    sumAllBalances = sumAllBalances - oldVal + newVal;
+}
+
+
+// =============================================================================
+// INVARIANT 1: Fund Conservation (no creation or destruction)
+// "The sum of all seller balances, buyer escrow, and protocol fees must always
+//  equal the total funds held by the contract. No XLM appears or vanishes."
+// =============================================================================
+invariant fundConservation()
+    sumAllBalances + protocolFeePool() == totalFunds()
+    {
+        preserved purchaseAgent(uint64 agentId) with (env e) {
+            require e.msg.value > 0;
+            // Funds flow: buyer -> escrow -> seller + royalty + fee
+            // totalFunds increases by msg.value, redistributed internally
+        }
+        preserved withdrawSeller(uint128 amount) with (env e) {
+            require sellerBalance(e.msg.sender) >= amount;
+        }
+    }
+
+rule noFundsCreatedOnPurchase(uint64 agentId) {
+    env e;
+    uint128 contractBefore = totalFunds();
+    uint128 buyerEscrowBefore = buyerEscrowed(e.msg.sender);
+
+    purchaseAgent(e, agentId);
+
+    uint128 contractAfter = totalFunds();
+    // Contract balance must increase by exactly msg.value
+    assert contractAfter == contractBefore + e.msg.value,
+        "Fund creation detected — VIOLATION";
+}
+
+rule noFundsDestroyedOnWithdraw(uint128 amount) {
+    env e;
+    uint128 sellerBal = sellerBalance(e.msg.sender);
+    uint128 contractBefore = totalFunds();
+
+    withdrawSeller(e, amount);
+
+    uint128 contractAfter = totalFunds();
+    assert contractAfter == contractBefore - amount,
+        "Fund destruction detected — VIOLATION";
+    assert sellerBalance(e.msg.sender) == sellerBal - amount,
+        "Seller balance mismatch — VIOLATION";
+}
+
+
+// =============================================================================
+// INVARIANT 2: Royalties never exceed 25% (2500 basis points)
+// "No listing may have royalties set above 25%. This protects buyers from
+//  predatory royalty structures."
+// =============================================================================
+invariant royaltiesCapped(uint64 agentId)
+    royaltyBps(agentId) <= 2500
+
+rule setRoyaltyRespectsCap(uint64 agentId, uint16 bps) {
+    env e;
+    require bps > 2500;
+
+    setRoyalty@withrevert(e, agentId, bps);
+
+    assert lastReverted,
+        "Setting royalty above 25% must revert — VIOLATION";
+}
+
+rule listAgentRespectsCap(uint64 agentId, uint128 price, uint16 bps) {
+    env e;
+    require bps > 2500;
+
+    listAgent@withrevert(e, agentId, price, bps);
+
+    assert lastReverted,
+        "Listing with royalty above 25% must revert — VIOLATION";
+}
+
+
+// =============================================================================
+// INVARIANT 3: Price always positive for active listings
+// "An active listing must have a price strictly greater than zero."
+// =============================================================================
+invariant activePricePositive(uint64 agentId)
+    listingActive(agentId) => listingPrice(agentId) > 0
+
+rule listAgentRequiresPositivePrice(uint64 agentId, uint128 price, uint16 bps) {
+    env e;
+    require price == 0;
+
+    listAgent@withrevert(e, agentId, price, bps);
+
+    assert lastReverted,
+        "Listing with zero price must revert — VIOLATION";
+}
+
+rule cancelClearsListing(uint64 agentId) {
+    env e;
+    require listingActive(agentId);
+
+    cancelListing(e, agentId);
+
+    assert !listingActive(agentId),
+        "Listing must be inactive after cancel — VIOLATION";
+    assert listingPrice(agentId) == 0,
+        "Price must be cleared after cancel — VIOLATION";
+}
+
+
+// =============================================================================
+// CONSERVATION: purchase transfers exactly the listing price
+// =============================================================================
+rule purchasePriceExact(uint64 agentId) {
+    env e;
+    uint128 price = listingPrice(agentId);
+    require listingActive(agentId);
+    require e.msg.value != price;
+
+    purchaseAgent@withrevert(e, agentId);
+
+    assert lastReverted,
+        "Purchase with incorrect payment must revert — VIOLATION";
+}

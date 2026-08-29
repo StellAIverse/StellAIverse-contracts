@@ -1,14 +1,27 @@
 [workspace]
 members = [
-    "contracts/agent-nft",
-    "contracts/agent-token",
+    "contracts/amm",
+    "contracts/collateral-management",
+    "contracts/compliance-integration",
+    "contracts/cross-chain-bridge",
+    "contracts/access-control",
     "contracts/execution-hub",
+    "contracts/fee-distribution",
+    "contracts/governance",
+    "contracts/membership-subscription",
     "contracts/marketplace",
-    "contracts/evolution",
+    "contracts/multisig-wallet",
+    "contracts/escrow",
+    "contracts/staking",
+    "contracts/token-vesting",
     "contracts/oracle",
     "contracts/faucet",
     "contracts/bridge",
+    "contracts/vault",
+    "contracts/portfolio-manager",
+    "contracts/prediction-markets",
     "lib",
+    "shared",
 ]
 
 resolver = "2"
@@ -17,6 +30,7 @@ resolver = "2"
 codegen-units = 1
 opt-level = 'z'
 lto = true
+panic = "abort"
 debug = false
 strip = "symbols"
 overflow-checks = true
@@ -26,5 +40,21 @@ inherits = "release"
 debug = true
 strip = "none"
 
+[profile.dev]
+codegen-units = 16
+opt-level = 0
+lto = false
+debug = true
+incremental = true
+
+[profile.test]
+codegen-units = 16
+opt-level = 1
+lto = false
+debug = true
+incremental = true
+
+
+
 [workspace.dependencies]
-soroban-sdk = "20.5.0"
+soroban-sdk = { version = "=22.0.10", default-features = false }

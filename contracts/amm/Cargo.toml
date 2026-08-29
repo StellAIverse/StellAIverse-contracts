@@ -1,0 +1,16 @@
+[package]
+name = "amm"
+version = "0.1.0"
+description = "Constant product AMM for decentralized token swaps and liquidity provision"
+authors = ["StellAIverse Team"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellai_lib = { path = "../../lib" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

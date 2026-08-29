@@ -1,0 +1,21 @@
+[package]
+name = "risk-evaluation"
+version = "0.1.0"
+description = "Risk evaluation contract with efficient oracle data fetching for StellAIverse"
+authors = ["StellAIverse Team"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellai_lib = { path = "../../lib" }
+shared = { path = "../../shared" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+shared = { path = "../../shared" }
+
+[features]
+testutils = ["soroban-sdk/testutils"]

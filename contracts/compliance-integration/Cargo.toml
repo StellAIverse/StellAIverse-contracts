@@ -1,0 +1,16 @@
+[package]
+name = "compliance-integration"
+version = "0.1.0"
+description = "Compliance integration for DID and Verifiable Credentials"
+authors = ["StellAIverse Team"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellai_lib = { path = "../../lib" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

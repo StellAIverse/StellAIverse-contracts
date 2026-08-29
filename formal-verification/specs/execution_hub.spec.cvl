@@ -1,0 +1,192 @@
+// =============================================================================
+// Formal Verification Specifications — Execution Hub Contract
+// stellAIverse-contracts | Issue #104
+// Tool: Certora Prover (CVL)
+// =============================================================================
+
+methods {
+    // State readers
+    function isAuthorizedExecutor(address executor)         external returns (bool)   envfree;
+    function executionCount(address executor)               external returns (uint64) envfree;
+    function lastExecutionTime(address executor)            external returns (uint64) envfree;
+    function rateLimitWindow()                              external returns (uint64) envfree;
+    function rateLimitMaxCalls()                            external returns (uint64) envfree;
+    function isOwner(address addr)                          external returns (bool)   envfree;
+    function isPaused()                                     external returns (bool)   envfree;
+    function totalExecutions()                              external returns (uint64) envfree;
+
+    // Mutating functions
+    function execute(bytes calldata payload)                external;
+    function authorizeExecutor(address executor)            external;
+    function revokeExecutor(address executor)               external;
+    function setRateLimit(uint64 window, uint64 maxCalls)   external;
+    function pause()                                        external;
+    function unpause()                                      external;
+}
+
+// Ghost tracking window-based execution counts
+ghost mapping(address => uint64) windowExecutions;
+
+hook Sstore executionCount[KEY address e] uint64 newVal (uint64 oldVal) {
+    windowExecutions[e] = newVal;
+}
+
+
+// =============================================================================
+// INVARIANT 1: Rate Limit Enforcement
+// "No executor may exceed rateLimitMaxCalls executions within rateLimitWindow
+//  seconds. The system must reject excess calls."
+// =============================================================================
+invariant rateLimitNeverExceeded(address executor)
+    windowExecutions[executor] <= rateLimitMaxCalls()
+
+rule executionRespectRateLimit(bytes payload) {
+    env e;
+    require isAuthorizedExecutor(e.msg.sender);
+
+    uint64 countBefore   = executionCount(e.msg.sender);
+    uint64 windowStart   = lastExecutionTime(e.msg.sender);
+    uint64 window        = rateLimitWindow();
+    uint64 maxCalls      = rateLimitMaxCalls();
+
+    // If within window and already at limit, must revert
+    require e.block.timestamp <= windowStart + window;
+    require countBefore >= maxCalls;
+
+    execute@withrevert(e, payload);
+
+    assert lastReverted,
+        "Execution above rate limit must revert — VIOLATION";
+}
+
+rule executionWithinLimitSucceeds(bytes payload) {
+    env e;
+    require isAuthorizedExecutor(e.msg.sender);
+    require !isPaused();
+
+    uint64 countBefore = executionCount(e.msg.sender);
+    uint64 maxCalls    = rateLimitMaxCalls();
+
+    // Strictly under the limit
+    require countBefore < maxCalls;
+
+    execute@withrevert(e, payload);
+
+    // Should NOT revert solely due to rate limiting
+    // (may revert for other reasons, but not rate limit)
+    bool reverted = lastReverted;
+    assert !reverted || countBefore >= maxCalls,
+        "Valid execution below rate limit should not be rate-limited — VIOLATION";
+}
+
+rule rateLimitWindowResets(bytes payload) {
+    env e;
+    require isAuthorizedExecutor(e.msg.sender);
+    require !isPaused();
+
+    uint64 windowStart = lastExecutionTime(e.msg.sender);
+    uint64 window      = rateLimitWindow();
+
+    // Past the window — counter should reset
+    require e.block.timestamp > windowStart + window;
+
+    execute@withrevert(e, payload);
+
+    // Count should reset to 1 (this execution)
+    assert !lastReverted => executionCount(e.msg.sender) == 1,
+        "Rate limit counter must reset after window — VIOLATION";
+}
+
+
+// =============================================================================
+// INVARIANT 2: Only authorized executors can execute
+// "Any call to execute() from an address not in the authorized set must revert."
+// =============================================================================
+invariant unauthorisedCannotExecute(address caller)
+    !isAuthorizedExecutor(caller)   // unauthorized addresses never succeed
+
+rule onlyAuthorizedCanExecute(bytes payload) {
+    env e;
+    require !isAuthorizedExecutor(e.msg.sender);
+
+    execute@withrevert(e, payload);
+
+    assert lastReverted,
+        "Unauthorised executor must not be able to execute — VIOLATION";
+}
+
+rule authorizeExecutorOnlyByOwner(address executor) {
+    env e;
+    require !isOwner(e.msg.sender);
+
+    authorizeExecutor@withrevert(e, executor);
+
+    assert lastReverted,
+        "Only owner can authorize executors — VIOLATION";
+}
+
+rule revokeExecutorOnlyByOwner(address executor) {
+    env e;
+    require !isOwner(e.msg.sender);
+
+    revokeExecutor@withrevert(e, executor);
+
+    assert lastReverted,
+        "Only owner can revoke executors — VIOLATION";
+}
+
+rule revokedExecutorCannotExecute(address executor, bytes payload) {
+    env e1;
+    env e2;
+    require isOwner(e1.msg.sender);
+    require e2.msg.sender == executor;
+
+    revokeExecutor(e1, executor);
+
+    assert !isAuthorizedExecutor(executor),
+        "Revoked executor must be de-authorized — VIOLATION";
+
+    execute@withrevert(e2, payload);
+
+    assert lastReverted,
+        "Revoked executor must not execute — VIOLATION";
+}
+
+
+// =============================================================================
+// SAFETY: Paused hub rejects all executions
+// =============================================================================
+rule pausedHubRejectsAll(bytes payload) {
+    env e;
+    require isPaused();
+
+    execute@withrevert(e, payload);
+
+    assert lastReverted,
+        "Paused hub must reject all executions — VIOLATION";
+}
+
+rule pauseOnlyByOwner() {
+    env e;
+    require !isOwner(e.msg.sender);
+
+    pause@withrevert(e);
+
+    assert lastReverted,
+        "Only owner can pause — VIOLATION";
+}
+
+
+// =============================================================================
+// LIVENESS: totalExecutions monotonically increases
+// =============================================================================
+rule totalExecutionsMonotone(method f) {
+    env e;
+    calldataarg args;
+    uint64 before = totalExecutions();
+
+    f(e, args);
+
+    assert totalExecutions() >= before,
+        "totalExecutions must never decrease — VIOLATION";
+}

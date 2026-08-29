@@ -1,0 +1,15 @@
+[package]
+name = "membership-subscription"
+version = "0.1.0"
+description = "Soroban membership and subscription contract with tiers, renewals, trials, and proration"
+authors = ["StellAIverse Team"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

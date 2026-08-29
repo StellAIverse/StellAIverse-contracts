@@ -1,9 +1,6 @@
 #![allow(unused_imports)]
 use soroban_sdk::{contracterror, contracttype, Address, Bytes, String, Vec};
 
-// ============================================================================
-// Contract Error Enum
-// ============================================================================
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]

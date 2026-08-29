@@ -1,0 +1,24 @@
+[package]
+name = "oracle"
+version = "0.1.0"
+description = " contract for StellAIverse"
+authors = ["StellAIverse Team"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellai_lib = { path = "../../lib" }
+shared = { path = "../../shared" }
+
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+shared = { path = "../../shared" }
+ed25519-dalek = "2.1.1"
+
+
+[features]
+testutils = ["soroban-sdk/testutils"]

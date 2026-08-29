@@ -1,4 +1,6 @@
-
+// LEGACY CONTRACT (DEPRECATED)
+// This file is retained for historical reference only.
+// Do not use `contracts_backup/*` for active development or deployment.
 #![no_std]
 extern crate alloc;
 use alloc::format;

@@ -1,0 +1,16 @@
+[package]
+name = "cross-chain-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-chain token bridge for Soroban that enables multi-chain token transfers with validator signature verification"
+license = "Apache-2.0"
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellai_lib = { path = "../../lib" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]

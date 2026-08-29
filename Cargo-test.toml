@@ -1,0 +1,25 @@
+[workspace]
+members = [
+    "contracts/governance",
+    "lib",
+    "shared",
+]
+
+resolver = "2"
+
+[profile.release]
+codegen-units = 1
+opt-level = 'z'
+lto = true
+panic = "abort"
+debug = false
+strip = "symbols"
+overflow-checks = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug = true
+strip = "none"
+
+[workspace.dependencies]
+soroban-sdk = "22.0.10"

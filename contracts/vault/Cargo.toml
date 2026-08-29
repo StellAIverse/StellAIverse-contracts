@@ -1,0 +1,15 @@
+[package]
+name = "vault"
+version = "0.1.0"
+description = "Soroban vault contract with share-based accounting, multi-strategy yield generation, and performance fees"
+authors = ["StellAIverse Team"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

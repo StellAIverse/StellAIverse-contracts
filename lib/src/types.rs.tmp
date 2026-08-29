@@ -1,0 +1,142 @@
+use soroban_sdk::{contracttype, Address, Bytes, String, Symbol, Val, Vec};
+
+/// State of a lease in its lifecycle.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[contracttype]
+#[repr(u32)]
+pub enum LeaseState {
+    Active = 0,
+    ExtensionRequested = 1,
+    Terminated = 2,
+    Renewed = 3,
+    Pending = 4,
+    Overdue = 5,
+    PendingRenewal = 6,
+    Expired = 7,
+}
+
+/// Frequency of lease payments.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[contracttype]
+#[repr(u32)]
+pub enum PaymentFrequency {
+    Daily = 0,
+    Weekly = 1,
+    Monthly = 2,
+    Quarterly = 3,
+    Yearly = 4,
+}
+
+/// Type of late fee policy.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[contracttype]
+#[repr(u32)]
+pub enum LateFeeType {
+    None = 0,
+    Fixed = 1,
+    Percentage = 2,
+    DailyAccumulation = 3,
+}
+
+/// Late fee policy configuration.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct LateFeePolicy {
+    pub fee_type: LateFeeType,
+    pub value: u128,
+}
+
+/// Renewal policy configuration.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct RenewalPolicy {
+    pub auto_renew: bool,
+    pub min_notice_period: u64,
+    pub max_renewals: u32,
+    pub current_renewal_count: u32,
+}
+
+/// Full lease record: duration, renewal terms, termination conditions, deposit.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct LeaseData {
+    pub lease_id: u64,
+    pub agent_id: u64,
+    pub listing_id: u64,
+    pub lessor: Address,
+    pub lessee: Address,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub duration_seconds: u64,
+    pub deposit_amount: i128,
+    pub total_value: i128,
+    pub auto_renew: bool,
+    pub lessee_consent_for_renewal: bool,
+    pub status: LeaseState,
+    pub pending_extension_id: Option<u64>,
+    // Advanced Lease Management Fields (Optional for backward compatibility)
+    pub payment_frequency: Option<PaymentFrequency>,
+    pub payment_amount: Option<i128>,
+    pub next_payment_timestamp: Option<u64>,
+    pub renewal_policy: Option<RenewalPolicy>,
+    pub termination_penalty_bps: Option<u32>,
+    pub late_fee_policy: Option<LateFeePolicy>,
+}
+
+/// A request to extend an active lease by additional duration.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct LeaseExtensionRequest {
+    pub extension_id: u64,
+    pub lease_id: u64,
+    pub additional_duration_seconds: u64,
+    pub requested_at: u64,
+    pub approved: bool,
+}
+
+/// Single entry in lease history (for lessee/lessor audit).
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct LeaseHistoryEntry {
+    pub lease_id: u64,
+    pub action: String,
+    pub actor: Address,
+    pub timestamp: u64,
+    pub details: Option<String>,
+    pub old_status: Option<LeaseState>,
+    pub new_status: Option<LeaseState>,
+}
+
+/// Transaction status in the two-phase commit protocol
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[contracttype]
+#[repr(u32)]
+pub enum TransactionStatus {
+    Initiated = 0,
+    Preparing = 1,
+    Prepared = 2,
+    Committing = 3,
+    Committed = 4,
+    RollingBack = 5,
+    RolledBack = 6,
+    Failed = 7,
+    TimedOut = 8,
+}
+
+/// Individual step in an atomic transaction
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct TransactionStep {
+    pub step_id: u32,
+    pub contract: Address,
+    pub function: Symbol,
+    pub args: Vec<Val>,
+    pub depends_on: Option<u32>,
+    pub rollback_contract: Option<Address>,
+    pub rollback_function: Option<Symbol>,
+    pub rollback_args: Option<Vec<Val>>,
+    pub executed: bool,
+    pub result: Option<String>,
+}
+
+// ... the rest of the file ...

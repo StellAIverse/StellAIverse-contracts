@@ -1,0 +1,5 @@
+# Fix getrandom for wasm32-unknown-unknown (Soroban contract target).
+# Soroban runs in the Stellar VM, not a browser, so we use the "unsupported"
+# backend: it compiles and returns Err if ever called (no wasm-bindgen bloat).
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg", "getrandom_backend=\"unsupported\""]

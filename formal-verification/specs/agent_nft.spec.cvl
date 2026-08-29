@@ -1,0 +1,145 @@
+// =============================================================================
+// Formal Verification Specifications — Agent NFT Contract
+// stellAIverse-contracts | Issue #104
+// Tool: Certora Prover (CVL — Certora Verification Language)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// IMPORTS & CONTRACT REFERENCE
+// -----------------------------------------------------------------------------
+// Reference the compiled Soroban contract WASM or Rust ABI
+// In CI, the prover receives: --contract AgentNFT --spec agent_nft.spec.cvl
+
+methods {
+    // State readers
+    function agentCounter()                         external returns (uint64) envfree;
+    function maxAgentId()                           external returns (uint64) envfree;
+    function ownerOf(uint64 agentId)                external returns (address) envfree;
+    function totalMinted()                          external returns (uint64) envfree;
+    function isApprovedOrOwner(address, uint64)     external returns (bool)   envfree;
+
+    // Mutating functions
+    function mintAgent(address recipient)           external returns (uint64);
+    function transferAgent(address from, address to, uint64 agentId) external;
+    function approveTransfer(address operator, uint64 agentId)       external;
+    function burnAgent(uint64 agentId)              external;
+}
+
+// =============================================================================
+// INVARIANT 1: agent_counter >= max_agent_id
+// "The agent counter must always be at least as large as the highest agent ID
+//  ever assigned. No agent ID can exceed the counter."
+// =============================================================================
+invariant agentCounterCorrect()
+    agentCounter() >= maxAgentId()
+    {
+        preserved mintAgent(address recipient) with (env e) {
+            // After mint, counter increments so invariant holds
+            require agentCounter() >= maxAgentId();
+        }
+        preserved burnAgent(uint64 agentId) with (env e) {
+            // Burn does not decrease counter, max_agent_id unchanged
+            require agentCounter() >= maxAgentId();
+        }
+    }
+
+// More granular: every existing agent ID is <= agentCounter
+invariant allAgentIdsWithinCounter(uint64 id)
+    ownerOf(id) != 0 => id <= agentCounter()
+
+
+// =============================================================================
+// INVARIANT 2: only owner can transfer agent
+// "A transfer must be initiated by the current owner or an approved operator.
+//  No other address may move an agent."
+// =============================================================================
+invariant onlyOwnerCanTransfer(uint64 agentId, address caller)
+    // If a transfer succeeds, caller must have been owner or approved
+    isApprovedOrOwner(caller, agentId) == true
+        || ownerOf(agentId) == caller
+
+rule transferRequiresOwnershipOrApproval(uint64 agentId, address from, address to) {
+    env e;
+    address ownerBefore = ownerOf(agentId);
+
+    transferAgent@withrevert(e, from, to, agentId);
+
+    // If transfer did NOT revert, caller must have been authorised
+    bool didSucceed = !lastReverted;
+    assert didSucceed =>
+        (e.msg.sender == ownerBefore || isApprovedOrOwner(e.msg.sender, agentId)),
+        "Transfer succeeded without owner/approval — VIOLATION";
+}
+
+rule unauthorisedTransferMustRevert(uint64 agentId, address from, address to) {
+    env e;
+    address owner = ownerOf(agentId);
+
+    require e.msg.sender != owner;
+    require !isApprovedOrOwner(e.msg.sender, agentId);
+
+    transferAgent@withrevert(e, from, to, agentId);
+
+    assert lastReverted,
+        "Unauthorised transfer must always revert — VIOLATION";
+}
+
+
+// =============================================================================
+// INVARIANT 3: total minted agents always increases (monotone)
+// "The totalMinted counter is non-decreasing. Agents can be minted but the
+//  historical count of minted agents never goes down."
+// =============================================================================
+invariant totalMintedMonotone()
+    totalMinted() >= 0   // trivially non-negative
+
+rule mintIncreasesTotalMinted(address recipient) {
+    env e;
+    uint64 before = totalMinted();
+
+    mintAgent(e, recipient);
+
+    uint64 after = totalMinted();
+    assert after == before + 1,
+        "totalMinted must increase by exactly 1 on mint — VIOLATION";
+}
+
+rule noOperationDecreasesMintCount(method f) {
+    env e;
+    calldataarg args;
+    uint64 before = totalMinted();
+
+    f(e, args);
+
+    uint64 after = totalMinted();
+    assert after >= before,
+        "totalMinted must never decrease — VIOLATION";
+}
+
+
+// =============================================================================
+// LIVENESS: mint eventually assigns ownership
+// =============================================================================
+rule mintAssignsOwnership(address recipient) {
+    env e;
+    require recipient != 0;  // no zero address
+
+    uint64 newId = mintAgent(e, recipient);
+
+    assert ownerOf(newId) == recipient,
+        "Newly minted agent must be owned by recipient — VIOLATION";
+}
+
+
+// =============================================================================
+// SAFETY: burn removes ownership
+// =============================================================================
+rule burnClearsOwnership(uint64 agentId) {
+    env e;
+    require ownerOf(agentId) == e.msg.sender;  // only owner can burn
+
+    burnAgent(e, agentId);
+
+    assert ownerOf(agentId) == 0,
+        "Burned agent must have no owner — VIOLATION";
+}

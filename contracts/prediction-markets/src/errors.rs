@@ -1,0 +1,48 @@
+use soroban_sdk::contracterror;
+
+/// Prediction market error codes.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum PredictionError {
+    AlreadyInitialized = 1,
+    MarketNotFound = 2,
+    MarketNotActive = 3,
+    MarketAlreadyResolved = 4,
+    MarketNotResolved = 5,
+    MarketClosed = 6,
+    ResolutionWindowNotClosed = 7,
+    ResolutionWindowExpired = 8,
+    InvalidOutcomeIndex = 9,
+    TooManyOutcomes = 10,
+    InvalidAmount = 11,
+    InsufficientBalance = 12,
+    SlippageExceeded = 13,
+    MarketCapExceeded = 14,
+    Unauthorized = 100,
+    AdminRequired = 101,
+    OracleRequired = 102,
+    InsufficientCollateral = 103,
+    NoLiquidity = 104,
+    InsufficientLpTokens = 105,
+    OrderNotFound = 106,
+    OrderExpired = 107,
+    OrderAlreadyFilled = 108,
+    CannotMatchOwnOrder = 109,
+    InsufficientCollateralForOrder = 110,
+    DisputeNotFound = 111,
+    DisputeAlreadyResolved = 112,
+    AlreadyVoted = 113,
+    DisputeNotOpen = 114,
+    DisputeStakeRequired = 115,
+    TradingPaused = 116,
+    InvalidOracleResult = 117,
+    ArithmeticOverflow = 118,
+    EmptyMarketCreation = 119,
+    InvalidResolutionWindow = 120,
+    InvalidFeeConfig = 121,
+    FeeTooHigh = 122,
+    MarketNotDisputed = 123,
+    DuplicateOutcomeName = 124,
+    InvalidMarketCap = 125,
+}

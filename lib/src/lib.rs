@@ -1,112 +1,17 @@
 #![no_std]
+pub mod admin;
+pub mod atomic;
+pub mod audit;
+pub mod audit_helpers;
 pub mod errors;
+pub mod proxy;
+pub mod rbac;
+pub mod storage_keys;
+pub mod types;
+pub mod validation;
 
-use soroban_sdk::{contracttype, symbol_short, Address, Bytes, String, Symbol, Vec};
-
-/// Oracle data entry
-#[derive(Clone, Debug)]
-#[contracttype]
-pub struct OracleData {
-    pub key: Symbol,
-    pub value: i128,
-    pub timestamp: u64,
-    pub provider: Address,
-    pub signature: Option<String>,
-    pub source: Option<String>,
-}
-
-/// Represents an agent's metadata and state
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[contracttype]
-pub struct Agent {
-    pub id: u64,
-    pub owner: Address,
-    pub name: String,
-    pub model_hash: String,
-    pub metadata_cid: String,
-    pub capabilities: Vec<String>,
-    pub evolution_level: u32,
-    pub created_at: u64,
-    pub updated_at: u64,
-    pub nonce: u64,
-    pub escrow_locked: bool,
-    pub escrow_holder: Option<Address>,
-}
-
-/// Rate limiting window for security protection
-#[derive(Clone, Copy)]
-#[contracttype]
-pub struct RateLimit {
-    pub window_seconds: u64,
-    pub max_operations: u32,
-}
-
-/// Represents a marketplace listing
-#[derive(Clone)]
-#[contracttype]
-pub struct Listing {
-    pub listing_id: u64,
-    pub agent_id: u64,
-    pub seller: Address,
-    pub price: i128,
-    pub listing_type: ListingType, // Sale, Lease, etc.
-    pub active: bool,
-    pub created_at: u64,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[contracttype]
-#[repr(u32)]
-pub enum ListingType {
-    Sale = 0,
-    Lease = 1,
-    Auction = 2,
-}
-
-/// Represents an evolution/upgrade request
-#[derive(Clone)]
-#[contracttype]
-pub struct EvolutionRequest {
-    pub request_id: u64,
-    pub agent_id: u64,
-    pub owner: Address,
-    pub stake_amount: i128,
-    pub status: EvolutionStatus,
-    pub created_at: u64,
-    pub completed_at: Option<u64>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[contracttype]
-#[repr(u32)]
-pub enum EvolutionStatus {
-    Pending = 0,
-    InProgress = 1,
-    Completed = 2,
-    Failed = 3,
-}
-
-/// Royalty information for marketplace transactions
-#[derive(Clone)]
-#[contracttype]
-pub struct RoyaltyInfo {
-    pub recipient: Address,
-    pub fee: u32, // 0-10000 representing 0-100%
-}
-
-/// Oracle attestation for evolution completion (signed by oracle provider)
-#[derive(Clone)]
-#[contracttype]
-pub struct EvolutionAttestation {
-    pub request_id: u64,
-    pub agent_id: u64,
-    pub oracle_provider: Address,
-    pub new_model_hash: String,
-    pub attestation_data: Bytes,
-    pub signature: Bytes,
-    pub timestamp: u64,
-    pub nonce: u64,
-}
+pub use storage_keys::*;
+pub use types::*;
 
 /// Constants for security hardening
 // Config
@@ -129,17 +34,21 @@ pub const MAX_AGE_SECONDS: u64 = 365 * 24 * 60 * 60; // ~1 year max data age
 pub const ATTESTATION_SIGNATURE_SIZE: usize = 64; // Ed25519 signature size
 pub const MAX_ATTESTATION_DATA_SIZE: usize = 1024; // Max size for attestation data
 
-// Storage keys
-pub const EXEC_CTR_KEY: Symbol = symbol_short!("exec_ctr");
-pub const REQUEST_COUNTER_KEY: &str = "request_counter";
-pub const CLAIM_COOLDOWN_KEY: &str = "claim_cooldown";
-pub const MAX_CLAIMS_PER_PERIOD_KEY: &str = "max_claims_per_period";
-pub const TESTNET_FLAG_KEY: &str = "testnet_mode";
-pub const DEFAULT_COOLDOWN_SECONDS: u64 = 86400; // 24 hours
-pub const DEFAULT_MAX_CLAIMS: u32 = 1;
-pub const LISTING_COUNTER_KEY: &str = "listing_counter";
-pub const PROVIDER_LIST_KEY: &str = "providers";
-pub const AGENT_COUNTER_KEY: &str = "agent_counter";
-pub const AGENT_KEY_PREFIX: &str = "agent_";
-pub const AGENT_LEASE_STATUS_PREFIX: &str = "agent_lease_";
-pub const APPROVED_MINTERS_KEY: &str = "approved_minters";
+// Approval constants
+pub const DEFAULT_APPROVAL_THRESHOLD: i128 = 10_000_000_000; // 10,000 USDC in stroops (assuming 7 decimals)
+pub const DEFAULT_APPROVERS_REQUIRED: u32 = 2; // N of M
+pub const DEFAULT_TOTAL_APPROVERS: u32 = 3; // Total authorized approvers
+pub const DEFAULT_APPROVAL_TTL_SECONDS: u64 = 604800; // 7 days
+
+// Lease config: basis points (bps). 1000 bps = 10%.
+pub const DEFAULT_LEASE_DEPOSIT_BPS: u32 = 1000; // 10% of lease value
+pub const DEFAULT_EARLY_TERMINATION_PENALTY_BPS: u32 = 2000; // 20% of remaining value
+pub const LEASE_EXTENSION_REQUEST_TTL_SECONDS: u64 = 604_800; // 7 days
+
+// Transaction constants
+pub const TRANSACTION_TIMEOUT_SECONDS: u64 = 300; // 5 minutes
+pub const MAX_TRANSACTION_STEPS: u32 = 10; // Prevent DoS
+pub const TRANSACTION_COUNTER_KEY: &str = "tx_counter";
+pub const TRANSACTION_KEY_PREFIX: &str = "tx_";
+pub const TRANSACTION_JOURNAL_KEY_PREFIX: &str = "tx_journal_";
+pub const MAX_ROLLBACK_ATTEMPTS: u32 = 3;

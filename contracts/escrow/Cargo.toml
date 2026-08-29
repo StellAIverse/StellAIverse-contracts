@@ -1,0 +1,16 @@
+[package]
+name = "escrow"
+version = "0.1.0"
+description = "Soroban escrow with M-of-N multisig approvals, time-locks, grace periods, and rate limiting"
+authors = ["StellAIverse Team"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+access-control = { path = "../access-control" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

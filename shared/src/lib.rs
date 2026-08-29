@@ -1,9 +1,73 @@
-#![allow(unused_imports)]
+#![no_std]
+
 use soroban_sdk::{contracttype, Address, Bytes, String, Vec};
 
-/// Represents an agent's metadata and state
-#[derive(Clone)]
+// ============================================================================
+// MODULE IDENTIFIERS
+// ============================================================================
+
 #[contracttype]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ModuleId {
+    AgentNft = 0,
+    AgentToken = 1,
+    Marketplace = 2,
+    Evolution = 3,
+    ExecutionHub = 4,
+    Oracle = 5,
+    Faucet = 6,
+    Governance = 7,
+    Compliance = 8,
+    Staking = 9,
+    Lifecycle = 10,
+    Threshold = 11,
+    TransactionCoord = 12,
+    VerifiableCreds = 13,
+    Metrics = 14,
+    Prediction = 15,
+    Referral = 16,
+    RiskEval = 17,
+    BugBounty = 18,
+    Affiliate = 19,
+    CreditScore = 20,
+    Waitlist = 21,
+    MultisigWaitlist = 22,
+    BridgeManager = 23,
+    Amm = 24,
+}
+
+// ============================================================================
+// STORAGE KEYS
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NamespacedKey {
+    pub module: ModuleId,
+    pub category: String,
+    pub identifier: String,
+}
+
+impl NamespacedKey {
+    pub fn validate(&self) -> bool {
+        !self.category.is_empty()
+            && !self.identifier.is_empty()
+            && self.category.len() <= MAX_STRING_LENGTH as u32
+            && self.identifier.len() <= MAX_STRING_LENGTH as u32
+    }
+}
+
+pub fn validate_namespaced_key(key: &NamespacedKey) -> bool {
+    key.validate()
+}
+
+// ============================================================================
+// AGENTS
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug)]
 pub struct Agent {
     pub id: u64,
     pub owner: Address,
@@ -18,29 +82,35 @@ pub struct Agent {
     pub escrow_holder: Option<Address>,
 }
 
-/// Rate limiting window for security protection
-#[derive(Clone, Copy)]
+// ============================================================================
+// RATE LIMITING
+// ============================================================================
+
 #[contracttype]
+#[derive(Clone, Copy, Debug)]
 pub struct RateLimit {
     pub window_seconds: u64,
     pub max_operations: u32,
 }
 
-/// Represents a marketplace listing
-#[derive(Clone)]
+// ============================================================================
+// MARKETPLACE
+// ============================================================================
+
 #[contracttype]
+#[derive(Clone, Debug)]
 pub struct Listing {
     pub listing_id: u64,
     pub agent_id: u64,
     pub seller: Address,
     pub price: i128,
-    pub listing_type: ListingType, // Sale, Lease, etc.
+    pub listing_type: ListingType,
     pub active: bool,
     pub created_at: u64,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
 #[contracttype]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum ListingType {
     Sale = 0,
@@ -48,9 +118,12 @@ pub enum ListingType {
     Auction = 2,
 }
 
-/// Represents an evolution/upgrade request
-#[derive(Clone)]
+// ============================================================================
+// EVOLUTION
+// ============================================================================
+
 #[contracttype]
+#[derive(Clone, Debug)]
 pub struct EvolutionRequest {
     pub request_id: u64,
     pub agent_id: u64,
@@ -61,8 +134,8 @@ pub struct EvolutionRequest {
     pub completed_at: Option<u64>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
 #[contracttype]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum EvolutionStatus {
     Pending = 0,
@@ -71,27 +144,8 @@ pub enum EvolutionStatus {
     Failed = 3,
 }
 
-/// Oracle data entry
-#[derive(Clone)]
 #[contracttype]
-pub struct OracleData {
-    pub key: String,
-    pub value: String,
-    pub timestamp: u64,
-    pub source: String,
-}
-
-/// Royalty information for marketplace transactions
-#[derive(Clone)]
-#[contracttype]
-pub struct RoyaltyInfo {
-    pub recipient: Address,
-    pub percentage: u32, // 0-10000 representing 0-100%
-}
-
-/// Oracle attestation for evolution completion (signed by oracle provider)
-#[derive(Clone)]
-#[contracttype]
+#[derive(Clone, Debug)]
 pub struct EvolutionAttestation {
     pub request_id: u64,
     pub agent_id: u64,
@@ -103,18 +157,60 @@ pub struct EvolutionAttestation {
     pub nonce: u64,
 }
 
-/// Constants for security hardening
+// ============================================================================
+// ORACLE
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct OracleData {
+    pub key: String,
+    pub value: String,
+    pub timestamp: u64,
+    pub source: String,
+}
+
+// ============================================================================
+// ROYALTIES
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct RoyaltyInfo {
+    pub recipient: Address,
+
+    /// Basis points (0–10000)
+    pub percentage: u32,
+}
+
+impl RoyaltyInfo {
+    pub fn is_valid(&self) -> bool {
+        self.percentage <= MAX_ROYALTY_PERCENTAGE
+    }
+}
+
+// ============================================================================
+// SECURITY CONSTANTS
+// ============================================================================
+
 pub const MAX_STRING_LENGTH: usize = 256;
 pub const MAX_CAPABILITIES: usize = 32;
-pub const MAX_ROYALTY_PERCENTAGE: u32 = 10000; // 100%
+
+pub const MAX_ROYALTY_PERCENTAGE: u32 = 10_000;
 pub const MIN_ROYALTY_PERCENTAGE: u32 = 0;
-pub const SAFE_ARITHMETIC_CHECK_OVERFLOW: u128 = u128::MAX;
-pub const PRICE_UPPER_BOUND: i128 = i128::MAX / 2; // Prevent overflow in calculations
-pub const PRICE_LOWER_BOUND: i128 = 0; // Prevent negative prices
-pub const MAX_DURATION_DAYS: u64 = 36500; // ~100 years max lease duration
-pub const MAX_AGE_SECONDS: u64 = 365 * 24 * 60 * 60; // ~1 year max data age
-pub const ATTESTATION_SIGNATURE_SIZE: usize = 64; // Ed25519 signature size
-pub const MAX_ATTESTATION_DATA_SIZE: usize = 1024; // Max size for attestation data
+
+pub const PRICE_UPPER_BOUND: i128 = i128::MAX / 2;
+pub const PRICE_LOWER_BOUND: i128 = 0;
+
+pub const MAX_DURATION_DAYS: u64 = 36_500;
+pub const MAX_AGE_SECONDS: u64 = 365 * 24 * 60 * 60;
+
+pub const ATTESTATION_SIGNATURE_SIZE: usize = 64;
+pub const MAX_ATTESTATION_DATA_SIZE: usize = 1024;
+
+// ============================================================================
+// TEST UTILITIES
+// ============================================================================
 
 /// Supported destination chains
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -311,7 +407,7 @@ pub const BRIDGE_LP_COUNTER_KEY: &str = "bridge_lp_counter";
 #[cfg(any(test, feature = "testutils"))]
 pub mod testutils {
     use super::*;
-    use soroban_sdk::{Address, Bytes, Env, String, Vec};
+    use soroban_sdk::Env;
 
     pub fn create_oracle_data(env: &Env, key: &str, value: &str, source: &str) -> OracleData {
         OracleData {
@@ -340,5 +436,101 @@ pub mod testutils {
             timestamp: env.ledger().timestamp(),
             nonce,
         }
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{Env, String};
+
+    fn key(env: &Env, module: ModuleId, category: &str, identifier: &str) -> NamespacedKey {
+        NamespacedKey {
+            module,
+            category: String::from_str(env, category),
+            identifier: String::from_str(env, identifier),
+        }
+    }
+
+    #[test]
+    fn valid_key_passes_validation() {
+        let env = Env::default();
+
+        let k = key(&env, ModuleId::Marketplace, "listing", "123");
+
+        assert!(k.validate());
+    }
+
+    #[test]
+    fn empty_category_fails() {
+        let env = Env::default();
+
+        let k = key(&env, ModuleId::Marketplace, "", "123");
+
+        assert!(!k.validate());
+    }
+
+    #[test]
+    fn empty_identifier_fails() {
+        let env = Env::default();
+
+        let k = key(&env, ModuleId::Marketplace, "listing", "");
+
+        assert!(!k.validate());
+    }
+
+    #[test]
+    fn modules_are_unique() {
+        assert_ne!(ModuleId::Marketplace, ModuleId::Evolution);
+
+        assert_ne!(ModuleId::Marketplace, ModuleId::AgentNft);
+    }
+
+    #[test]
+    fn dynamic_keys_remain_unique() {
+        let env = Env::default();
+
+        let modules = [
+            ModuleId::AgentNft,
+            ModuleId::Marketplace,
+            ModuleId::Evolution,
+            ModuleId::Governance,
+            ModuleId::Compliance,
+        ];
+
+        let categories = ["user", "agent", "listing", "request", "proposal"];
+
+        let identifiers = ["1", "2", "100", "999", "dynamic_key"];
+
+        let mut keys: Vec<(ModuleId, String, String)> = Vec::new(&env);
+
+        for module in modules {
+            for category in categories {
+                for identifier in identifiers {
+                    let k = key(&env, module, category, identifier);
+
+                    assert!(k.validate());
+
+                    for existing in keys.iter() {
+                        assert!(
+                            !(existing.0 == k.module
+                                && existing.1 == k.category
+                                && existing.2 == k.identifier)
+                        );
+                    }
+
+                    keys.push_back((k.module, k.category, k.identifier));
+                }
+            }
+        }
+
+        assert_eq!(
+            keys.len(),
+            (modules.len() * categories.len() * identifiers.len()) as u32
+        );
     }
 }
