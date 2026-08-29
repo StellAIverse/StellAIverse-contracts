@@ -55,4 +55,10 @@ pub enum ContractError {
     InvalidTxHash = 130,
     CounterAlreadyExists = 131,
     InvalidDirection = 132,
+    // RBAC errors
+    RoleEscalationAttempt = 200,
+    RoleConflict = 201,
+    // Validation errors
+    MetadataTooLong = 210,
+    CapabilitiesExceeded = 211,
 }
