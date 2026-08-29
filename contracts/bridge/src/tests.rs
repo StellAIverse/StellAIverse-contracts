@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::{
-        testutils::{Address as _, Env},
-        Address, String, Vec,
-    };
+    extern crate alloc;
+    use alloc::format;
+
+    use soroban_sdk::{testutils::Address as _, Address, Env, String, Vec};
 
     use super::super::contract::BridgeGateway;
     use shared::{BridgeDirection, BridgeStatus, SupportedChain, MAX_FEE_BPS};

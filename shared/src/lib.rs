@@ -224,7 +224,7 @@ pub enum SupportedChain {
 }
 
 /// Status of a bridge transaction
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[contracttype]
 #[repr(u32)]
 pub enum BridgeStatus {
@@ -237,7 +237,7 @@ pub enum BridgeStatus {
 }
 
 /// Direction of a bridge transfer
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[contracttype]
 #[repr(u32)]
 pub enum BridgeDirection {

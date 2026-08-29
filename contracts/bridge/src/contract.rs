@@ -836,7 +836,10 @@ impl BridgeGateway {
         disputer.require_auth();
 
         assert!(!reason.is_empty(), "Reason required");
-        assert!(reason.len() <= MAX_DISPUTE_REASON_LENGTH, "Reason too long");
+        assert!(
+            reason.len() <= MAX_DISPUTE_REASON_LENGTH as u32,
+            "Reason too long"
+        );
 
         let tx = storage::get_transaction(&env, tx_id).expect("Transaction not found");
 
