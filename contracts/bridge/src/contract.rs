@@ -328,7 +328,6 @@ impl BridgeGateway {
         }
 
         assert!(fee_bps <= MAX_FEE_BPS, "Fee exceeds maximum");
-        assert!(fee_bps >= MIN_FEE_BPS, "Fee below minimum");
         assert!(min_amount >= 0, "Min amount must be non-negative");
         assert!(max_amount > min_amount, "Max must be greater than min");
 

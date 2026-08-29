@@ -151,7 +151,7 @@ pub fn add_supported_chain(env: &Env, chain: &SupportedChain) {
         .unwrap_or(Vec::new(env));
 
     if !is_chain_supported(env, chain) {
-        chains.push_back(chain.clone());
+        chains.push_back(*chain);
         env.storage()
             .instance()
             .set(&StorageKey::SupportedChains, &chains);
@@ -168,7 +168,7 @@ pub fn remove_supported_chain(env: &Env, chain: &SupportedChain) {
     let mut updated = Vec::new(env);
     for c in chains.iter() {
         if c != *chain {
-            updated.push_back(c.clone());
+            updated.push_back(c);
         }
     }
     env.storage()

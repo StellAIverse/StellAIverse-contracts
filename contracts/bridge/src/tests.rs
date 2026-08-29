@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod bridge_tests {
     extern crate alloc;
     use alloc::format;
 
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn test_add_validator() {
         let env = create_test_env();
-        let (admin, validators) =
+        let (admin, _validators) =
             setup_bridge_with_validators(&env, SupportedChain::Ethereum, 3, 2);
 
         let new_validator = Address::generate(&env);
@@ -772,7 +772,7 @@ mod tests {
     #[test]
     fn test_mint_assets() {
         let env = create_test_env();
-        let (admin, validators) =
+        let (admin, _validators) =
             setup_bridge_with_validators(&env, SupportedChain::Ethereum, 3, 2);
         setup_wrapped_asset(&env, &admin, SupportedChain::Ethereum);
 
