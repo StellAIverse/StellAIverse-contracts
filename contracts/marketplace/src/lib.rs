@@ -2631,7 +2631,7 @@ impl Marketplace {
         let marketplace = env.current_contract_address();
         let mut updated_agent = agent;
         updated_agent.escrow_locked = true;
-        updated_agent.escrow_holder = Some(marketplace);
+        updated_agent.escrow_holder = Some(marketplace.clone());
         updated_agent.updated_at = current_time;
         Self::save_agent(&env, agent_id, &updated_agent);
 
