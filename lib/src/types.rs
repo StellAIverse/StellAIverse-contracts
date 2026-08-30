@@ -12,6 +12,65 @@ pub struct OracleData {
     pub source: Option<String>,
 }
 
+// ── NFT Token Standards (ERC721/ERC1155 analogs for Stellar) ──────────────
+
+/// NFT token standard identifier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[contracttype]
+#[repr(u32)]
+pub enum NftStandard {
+    /// Soroban-native NFT (soroban-token with 1:1 semantics).
+    SorobanNative = 0,
+    /// ERC-721-style non-fungible token.
+    Erc721 = 1,
+    /// ERC-1155-style multi-token (supports batch transfers).
+    Erc1155 = 2,
+}
+
+/// Reference to an external or native NFT asset.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct NftTokenRef {
+    /// The Soroban contract address that issued this NFT.
+    /// `None` for Soroban-native NFTs managed entirely by the marketplace.
+    pub contract_address: Option<Address>,
+    /// Token identifier within the contract.
+    pub token_id: u64,
+    /// Which standard the token follows.
+    pub standard: NftStandard,
+}
+
+/// Accepted payment currency for marketplace transactions.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct CurrencyInfo {
+    /// Short display symbol, e.g. "XLM", "USDC".
+    pub symbol: String,
+    /// Soroban contract address of the token; `None` for native XLM.
+    pub token_address: Option<Address>,
+    /// Number of decimal places (e.g. 7 for XLM stroops).
+    pub decimals: u32,
+}
+
+/// Multi-recipient fee split configuration.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct FeeSplitRecipient {
+    pub recipient: Address,
+    pub share_bps: u32, // basis points (0-10000)
+}
+
+/// Complete fee-split configuration with governance-controlled splits.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct FeeSplitConfig {
+    pub platform_share_bps: u32,
+    pub creator_share_bps: u32,
+    pub collection_share_bps: u32,
+    pub extra_recipients: Vec<FeeSplitRecipient>,
+    pub total_bps: u32,
+}
+
 /// Represents an agent's metadata and state
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[contracttype]
