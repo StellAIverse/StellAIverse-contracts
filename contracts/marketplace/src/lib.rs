@@ -50,6 +50,17 @@ const AUCTION_TYPE_DUTCH: u32 = 1;
 #[allow(dead_code)]
 const AUCTION_TYPE_SEALED: u32 = 2;
 
+// ── NFT Marketplace extension constants ─────────────────────────────────────
+const NFT_LISTING_PREFIX: &str = "nlst_";
+const NFT_LISTING_CTR_KEY: &str = "nlst_ctr";
+const CURRENCY_PREFIX: &str = "ccy_";
+const CURRENCY_CTR_KEY: &str = "ccy_ctr";
+const ACCEPTED_CURRENCY_KEY: &str = "acc_ccy";
+const FEE_SPLIT_KEY: &str = "fee_sp";
+const IPFS_METADATA_PREFIX: &str = "ipfs_";
+const EXTENSION_WINDOW_SECS: u64 = 300; // 5 minutes auto-extension window
+const DEFAULT_EXTENSION_SECS: u64 = 300; // 5 minutes extension
+
 // ── Local types ───────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -125,6 +136,33 @@ pub struct CounterOffer {
     pub expires_at: u64,
 }
 
+// ── NFT Marketplace types ───────────────────────────────────────────────────
+
+#[derive(Clone)]
+#[soroban_sdk::contracttype]
+pub struct NftListing {
+    pub nft_listing_id: u64,
+    pub nft_token_ref: stellai_lib::NftTokenRef,
+    pub seller: Address,
+    pub price: i128,
+    pub currency_symbol: soroban_sdk::String,
+    pub currency_token_address: Option<Address>,
+    pub active: bool,
+    pub created_at: u64,
+    pub expires_at: u64,
+    pub metadata_uri: soroban_sdk::String, // IPFS CID for NFT metadata
+}
+
+#[derive(Clone)]
+#[soroban_sdk::contracttype]
+pub struct CurrencyRecord {
+    pub currency_id: u64,
+    pub symbol: soroban_sdk::String,
+    pub token_address: Option<Address>,
+    pub decimals: u32,
+    pub active: bool,
+}
+
 // ── Contract ──────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -161,6 +199,12 @@ impl Marketplace {
         env.storage()
             .instance()
             .set(&Symbol::new(&env, DISPUTE_CTR_KEY), &0u64);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, NFT_LISTING_CTR_KEY), &0u64);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, CURRENCY_CTR_KEY), &0u64);
         // Initialize default platform fee: 2.5%
         let default_fee = PlatformFeeConfig {
             fee_bps: 250,
@@ -2303,8 +2347,500 @@ impl Marketplace {
     }
 
     // =========================================================================
-    // Queries
     // =========================================================================
+    // NFT LISTINGS — ERC721/ERC1155 support with configurable currency
+    // ==========================================================================
+
+    /// Create a listing for an NFT with configurable currency support.
+    pub fn create_nft_listing(
+        env: Env,
+        nft_token_ref: stellai_lib::NftTokenRef,
+        seller: Address,
+        price: i128,
+        currency_symbol: soroban_sdk::String,
+        currency_token_address: Option<Address>,
+        duration_days: Option<u64>,
+        metadata_uri: soroban_sdk::String,
+    ) -> u64 {
+        seller.require_auth();
+        if price <= 0 || price > stellai_lib::PRICE_UPPER_BOUND {
+            panic!("Price out of valid range");
+        }
+        if currency_symbol.is_empty() {
+            panic!("Currency symbol required");
+        }
+
+        let nft_listing_id = Self::next_nft_listing_id(&env);
+        let current_time = env.ledger().timestamp();
+        let expires_at = if let Some(days) = duration_days {
+            current_time + (days * 24 * 60 * 60)
+        } else {
+            current_time + DEFAULT_LISTING_DURATION
+        };
+
+        let nft_listing = NftListing {
+            nft_listing_id,
+            nft_token_ref: nft_token_ref.clone(),
+            seller: seller.clone(),
+            price,
+            currency_symbol: currency_symbol.clone(),
+            currency_token_address,
+            active: true,
+            created_at: current_time,
+            expires_at,
+            metadata_uri,
+        };
+
+        let lk = Self::nft_listing_key(&env, nft_listing_id);
+        env.storage().instance().set(&lk, &nft_listing);
+
+        env.events().publish(
+            (symbol_short!("nft_lst"),),
+            (nft_listing_id, nft_token_ref.token_id, seller, price, currency_symbol),
+        );
+
+        nft_listing_id
+    }
+
+    /// Buy an NFT listing at the listed price.
+    pub fn buy_nft_listing(
+        env: Env,
+        nft_listing_id: u64,
+        buyer: Address,
+        payment_amount: i128,
+    ) {
+        buyer.require_auth();
+        if nft_listing_id == 0 {
+            panic!("Invalid NFT listing ID");
+        }
+        if payment_amount <= 0 {
+            panic!("Payment must be positive");
+        }
+
+        let mut nft_listing = Self::load_nft_listing(&env, nft_listing_id);
+        if !nft_listing.active {
+            panic!("NFT listing is not active");
+        }
+        let current_time = env.ledger().timestamp();
+        if nft_listing.expires_at < current_time {
+            panic!("NFT listing has expired");
+        }
+        if payment_amount < nft_listing.price {
+            panic!("Insufficient payment");
+        }
+
+        let (royalty_amount, platform_fee) =
+            Self::compute_settlement_fees(&env, nft_listing.nft_token_ref.token_id, payment_amount);
+
+        let _seller_amount = payment_amount
+            .checked_sub(royalty_amount)
+            .expect("Seller amount underflow")
+            .checked_sub(platform_fee)
+            .expect("Platform fee underflow");
+
+        nft_listing.active = false;
+        let lk = Self::nft_listing_key(&env, nft_listing_id);
+        env.storage().instance().set(&lk, &nft_listing);
+
+        Self::record_transaction(
+            &env,
+            nft_listing_id,
+            nft_listing.nft_token_ref.token_id,
+            nft_listing.seller.clone(),
+            buyer.clone(),
+            payment_amount,
+            royalty_amount,
+            platform_fee,
+            String::from_str(&env, "nft_sale"),
+        );
+
+        env.events().publish(
+            (symbol_short!("nft_sold"),),
+            (nft_listing_id, nft_listing.nft_token_ref.token_id, buyer, royalty_amount, platform_fee),
+        );
+    }
+
+    /// Cancel an NFT listing (seller only).
+    pub fn cancel_nft_listing(env: Env, nft_listing_id: u64, seller: Address) {
+        seller.require_auth();
+        if nft_listing_id == 0 {
+            panic!("Invalid NFT listing ID");
+        }
+        let mut nft_listing = Self::load_nft_listing(&env, nft_listing_id);
+        if nft_listing.seller != seller {
+            panic!("Only seller can cancel NFT listing");
+        }
+        if !nft_listing.active {
+            panic!("NFT listing is not active");
+        }
+
+        nft_listing.active = false;
+        let lk = Self::nft_listing_key(&env, nft_listing_id);
+        env.storage().instance().set(&lk, &nft_listing);
+
+        env.events().publish(
+            (symbol_short!("nft_cncl"),),
+            (nft_listing_id, nft_listing.nft_token_ref.token_id, seller),
+        );
+    }
+
+    /// Get an NFT listing by ID.
+    pub fn get_nft_listing(env: Env, nft_listing_id: u64) -> NftListing {
+        Self::load_nft_listing(&env, nft_listing_id)
+    }
+
+    // =========================================================================
+    // CONFIGURABLE CURRENCY SUPPORT
+    // ==========================================================================
+
+    /// Register a new accepted currency (admin only).
+    pub fn register_currency(
+        env: Env,
+        admin: Address,
+        symbol: soroban_sdk::String,
+        token_address: Option<Address>,
+        decimals: u32,
+    ) -> u64 {
+        admin.require_auth();
+        Self::assert_admin(&env, &admin);
+        if symbol.is_empty() {
+            panic!("Currency symbol required");
+        }
+        if decimals > 18 {
+            panic!("Decimals cannot exceed 18");
+        }
+
+        let currency_id = Self::next_currency_id(&env);
+        let record = CurrencyRecord {
+            currency_id,
+            symbol: symbol.clone(),
+            token_address,
+            decimals,
+            active: true,
+        };
+        let ck = Self::currency_key(&env, currency_id);
+        env.storage().instance().set(&ck, &record);
+
+        let mut accepted: Vec<soroban_sdk::String> = env
+            .storage()
+            .instance()
+            .get(&Symbol::new(&env, ACCEPTED_CURRENCY_KEY))
+            .unwrap_or_else(|| Vec::new(&env));
+        accepted.push_back(symbol.clone());
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, ACCEPTED_CURRENCY_KEY), &accepted);
+
+        env.events().publish(
+            (symbol_short!("ccy_reg"),),
+            (currency_id, symbol, decimals),
+        );
+
+        currency_id
+    }
+
+    /// Deactivate a currency (admin only).
+    pub fn deactivate_currency(env: Env, admin: Address, currency_id: u64) {
+        admin.require_auth();
+        Self::assert_admin(&env, &admin);
+        if currency_id == 0 {
+            panic!("Invalid currency ID");
+        }
+        let mut record: CurrencyRecord = env
+            .storage()
+            .instance()
+            .get(&Self::currency_key(&env, currency_id))
+            .expect("Currency not found");
+        record.active = false;
+        env.storage()
+            .instance()
+            .set(&Self::currency_key(&env, currency_id), &record);
+        env.events().publish(
+            (symbol_short!("ccy_off"),),
+            (currency_id, record.symbol),
+        );
+    }
+
+    /// Get a registered currency by ID.
+    pub fn get_currency(env: Env, currency_id: u64) -> CurrencyRecord {
+        env.storage()
+            .instance()
+            .get(&Self::currency_key(&env, currency_id))
+            .expect("Currency not found")
+    }
+
+    /// Get all accepted currency symbols.
+    pub fn get_accepted_currencies(env: Env) -> Vec<soroban_sdk::String> {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, ACCEPTED_CURRENCY_KEY))
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    // =========================================================================
+    // ENGLISH AUCTION AUTO-EXTENSION
+    // ==========================================================================
+
+    /// Create an English auction with configurable auto-extension.
+    pub fn create_auction_with_extension(
+        env: Env,
+        agent_id: u64,
+        seller: Address,
+        start_price: i128,
+        reserve_price: i128,
+        duration_days: u64,
+        min_bid_increment_bps: Option<u32>,
+        extension_window_secs: Option<u64>,
+        extension_secs: Option<u64>,
+    ) -> u64 {
+        seller.require_auth();
+        if agent_id == 0 {
+            panic!("Invalid agent ID");
+        }
+        if start_price <= 0 || reserve_price <= 0 {
+            panic!("Prices must be positive");
+        }
+        if reserve_price > start_price {
+            panic!("Reserve price cannot exceed start price");
+        }
+        if duration_days == 0 || duration_days > 365 {
+            panic!("Invalid auction duration");
+        }
+
+        let agent = Self::load_agent(&env, agent_id);
+        if agent.owner != seller {
+            panic!("Only owner can create auctions");
+        }
+        if agent.escrow_locked {
+            panic!("Agent already locked in escrow");
+        }
+
+        let auction_id = Self::next_auction_id(&env);
+        let current_time = env.ledger().timestamp();
+        let end_time = current_time + (duration_days * 24 * 60 * 60);
+        let min_increment = min_bid_increment_bps.unwrap_or(MIN_BID_INCREMENT_BPS);
+
+        #[allow(clippy::manual_range_contains)]
+        if min_increment < 10 || min_increment > 10000 {
+            panic!("Invalid bid increment (must be 0.1% to 100%)");
+        }
+
+        let marketplace = env.current_contract_address();
+        let mut updated_agent = agent;
+        updated_agent.escrow_locked = true;
+        updated_agent.escrow_holder = Some(marketplace);
+        updated_agent.updated_at = current_time;
+        Self::save_agent(&env, agent_id, &updated_agent);
+
+        let auction = stellai_lib::Auction {
+            auction_id,
+            agent_id,
+            seller: seller.clone(),
+            auction_type: stellai_lib::AuctionType::English,
+            start_price,
+            reserve_price,
+            current_price: start_price,
+            highest_bidder: None,
+            highest_bid: 0,
+            start_time: current_time,
+            end_time,
+            min_bid_increment_bps: min_increment,
+            status: stellai_lib::AuctionStatus::Active,
+            dutch_config: None,
+            sealed_commit_end: None,
+            sealed_reveal_end: None,
+        };
+
+        let ak = Self::auction_key(&env, auction_id);
+        env.storage().instance().set(&ak, &auction);
+
+        let ext_window = extension_window_secs.unwrap_or(EXTENSION_WINDOW_SECS);
+        let ext_secs = extension_secs.unwrap_or(DEFAULT_EXTENSION_SECS);
+        if ext_secs == 0 {
+            panic!("Extension duration must be positive");
+        }
+        let ext_key = (Symbol::new(&env, "ext_cfg"), auction_id);
+        env.storage().instance().set(&ext_key, &(ext_window, ext_secs));
+
+        env.events().publish(
+            (symbol_short!("auc_ext"),),
+            (auction_id, agent_id, start_price, end_time, ext_window, ext_secs),
+        );
+
+        auction_id
+    }
+
+    /// Place a bid with auto-extension support.
+    pub fn place_bid_with_extension(
+        env: Env,
+        auction_id: u64,
+        bidder: Address,
+        bid_amount: i128,
+    ) {
+        bidder.require_auth();
+        if auction_id == 0 {
+            panic!("Invalid auction ID");
+        }
+        if bid_amount <= 0 {
+            panic!("Bid amount must be positive");
+        }
+
+        let mut auction: stellai_lib::Auction = env
+            .storage()
+            .instance()
+            .get(&Self::auction_key(&env, auction_id))
+            .expect("Auction not found");
+
+        let current_time = env.ledger().timestamp();
+        if auction.status != stellai_lib::AuctionStatus::Active {
+            panic!("Auction is not active");
+        }
+        if current_time > auction.end_time {
+            panic!("Auction has ended");
+        }
+
+        let min_bid = if auction.highest_bid == 0 {
+            auction.start_price
+        } else {
+            let min_increment =
+                (auction.highest_bid * (auction.min_bid_increment_bps as i128)) / 10000;
+            auction.highest_bid + min_increment
+        };
+
+        if bid_amount < min_bid {
+            panic!("Bid too low - minimum required: {}", min_bid);
+        }
+
+        if let Some(prev_bidder) = auction.highest_bidder {
+            env.events().publish(
+                (symbol_short!("bid_refnd"),),
+                (auction_id, prev_bidder, auction.highest_bid, current_time),
+            );
+        }
+
+        // Auto-extension
+        let ext_key = (Symbol::new(&env, "ext_cfg"), auction_id);
+        let ext_config: Option<(u64, u64)> = env.storage().instance().get(&ext_key);
+        if let Some((ext_window, ext_secs)) = ext_config {
+            let time_remaining = auction.end_time.saturating_sub(current_time);
+            if time_remaining <= ext_window {
+                let new_end_time = auction.end_time + ext_secs;
+                auction.end_time = new_end_time;
+                env.events().publish(
+                    (symbol_short!("auc_extend"),),
+                    (auction_id, new_end_time, current_time),
+                );
+            }
+        }
+
+        let bid_sequence =
+            Self::record_bid(&env, auction_id, bidder.clone(), bid_amount, current_time);
+
+        auction.highest_bidder = Some(bidder.clone());
+        auction.highest_bid = bid_amount;
+        auction.current_price = bid_amount;
+        env.storage()
+            .instance()
+            .set(&Self::auction_key(&env, auction_id), &auction);
+
+        env.events().publish(
+            (symbol_short!("bid_plcd"),),
+            (auction_id, bidder, bid_amount, bid_sequence, current_time),
+        );
+    }
+
+    /// Get the extension config for an auction.
+    pub fn get_auction_extension_config(env: Env, auction_id: u64) -> Option<(u64, u64)> {
+        let ext_key = (Symbol::new(&env, "ext_cfg"), auction_id);
+        env.storage().instance().get(&ext_key)
+    }
+
+    // =========================================================================
+    // IPFS METADATA FOR COLLECTIONS
+    // ==========================================================================
+
+    /// Set IPFS metadata URI for a collection.
+    pub fn set_collection_ipfs_metadata(
+        env: Env,
+        creator: Address,
+        collection_id: u64,
+        metadata_uri: soroban_sdk::String,
+    ) {
+        creator.require_auth();
+        if collection_id == 0 {
+            panic!("Invalid collection ID");
+        }
+        let coll = Self::load_collection(&env, collection_id);
+        if coll.creator != creator {
+            panic!("Only creator can set collection metadata");
+        }
+        let ipfs_key = Self::ipfs_metadata_key(&env, collection_id);
+        env.storage().instance().set(&ipfs_key, &metadata_uri);
+        env.events().publish(
+            (symbol_short!("ipfs_set"),),
+            (collection_id, metadata_uri, env.ledger().timestamp()),
+        );
+    }
+
+    /// Get IPFS metadata URI for a collection.
+    pub fn get_collection_ipfs_metadata(env: Env, collection_id: u64) -> Option<soroban_sdk::String> {
+        let ipfs_key = Self::ipfs_metadata_key(&env, collection_id);
+        env.storage().instance().get(&ipfs_key)
+    }
+
+    // =========================================================================
+    // GOVERNANCE-CONTROLLED FEE SPLITS
+    // ==========================================================================
+
+    /// Set the fee split configuration (admin/governance only).
+    pub fn set_fee_splits(
+        env: Env,
+        admin: Address,
+        platform_share_bps: u32,
+        creator_share_bps: u32,
+        collection_share_bps: u32,
+        extra_recipients: Vec<stellai_lib::FeeSplitRecipient>,
+    ) {
+        admin.require_auth();
+        Self::assert_admin(&env, &admin);
+
+        let mut total = platform_share_bps + creator_share_bps + collection_share_bps;
+        for i in 0..extra_recipients.len() {
+            if let Some(r) = extra_recipients.get(i) {
+                total = total.checked_add(r.share_bps).expect("Fee share overflow");
+            }
+        }
+        if total > 10000 {
+            panic!("Total fee shares exceed 100%");
+        }
+
+        let config = stellai_lib::FeeSplitConfig {
+            platform_share_bps,
+            creator_share_bps,
+            collection_share_bps,
+            extra_recipients,
+            total_bps: total,
+        };
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, FEE_SPLIT_KEY), &config);
+
+        env.events().publish(
+            (symbol_short!("fee_split"),),
+            (platform_share_bps, creator_share_bps, collection_share_bps, total),
+        );
+    }
+
+    /// Get the current fee split configuration.
+    pub fn get_fee_splits(env: Env) -> Option<stellai_lib::FeeSplitConfig> {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, FEE_SPLIT_KEY))
+    }
+
+    // =========================================================================
+    // Queries
+    // ==========================================================================
 
     pub fn get_listing(env: Env, listing_id: u64) -> stellai_lib::Listing {
         Self::load_listing(&env, listing_id)
@@ -2669,6 +3205,43 @@ impl Marketplace {
             *byte = data.get(i as u32).expect("byte missing");
         }
         u64::from_be_bytes(arr)
+    }
+
+    // ── NFT Marketplace helpers ─────────────────────────────────────────────
+
+    fn nft_listing_key(env: &Env, nft_listing_id: u64) -> (String, u64) {
+        (String::from_str(env, NFT_LISTING_PREFIX), nft_listing_id)
+    }
+
+    fn load_nft_listing(env: &Env, nft_listing_id: u64) -> NftListing {
+        env.storage()
+            .instance()
+            .get(&Self::nft_listing_key(env, nft_listing_id))
+            .expect("NFT listing not found")
+    }
+
+    fn next_nft_listing_id(env: &Env) -> u64 {
+        let key = Symbol::new(env, NFT_LISTING_CTR_KEY);
+        let current: u64 = env.storage().instance().get(&key).unwrap_or(0);
+        let next = current.checked_add(1).expect("NFT listing ID overflow");
+        env.storage().instance().set(&key, &next);
+        next
+    }
+
+    fn currency_key(env: &Env, currency_id: u64) -> (String, u64) {
+        (String::from_str(env, CURRENCY_PREFIX), currency_id)
+    }
+
+    fn next_currency_id(env: &Env) -> u64 {
+        let key = Symbol::new(env, CURRENCY_CTR_KEY);
+        let current: u64 = env.storage().instance().get(&key).unwrap_or(0);
+        let next = current.checked_add(1).expect("Currency ID overflow");
+        env.storage().instance().set(&key, &next);
+        next
+    }
+
+    fn ipfs_metadata_key(env: &Env, collection_id: u64) -> (String, u64) {
+        (String::from_str(env, IPFS_METADATA_PREFIX), collection_id)
     }
 }
 
