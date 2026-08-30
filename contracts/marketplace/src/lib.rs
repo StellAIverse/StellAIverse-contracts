@@ -2396,19 +2396,20 @@ impl Marketplace {
 
         env.events().publish(
             (symbol_short!("nft_lst"),),
-            (nft_listing_id, nft_token_ref.token_id, seller, price, currency_symbol),
+            (
+                nft_listing_id,
+                nft_token_ref.token_id,
+                seller,
+                price,
+                currency_symbol,
+            ),
         );
 
         nft_listing_id
     }
 
     /// Buy an NFT listing at the listed price.
-    pub fn buy_nft_listing(
-        env: Env,
-        nft_listing_id: u64,
-        buyer: Address,
-        payment_amount: i128,
-    ) {
+    pub fn buy_nft_listing(env: Env, nft_listing_id: u64, buyer: Address, payment_amount: i128) {
         buyer.require_auth();
         if nft_listing_id == 0 {
             panic!("Invalid NFT listing ID");
@@ -2456,7 +2457,13 @@ impl Marketplace {
 
         env.events().publish(
             (symbol_short!("nft_sold"),),
-            (nft_listing_id, nft_listing.nft_token_ref.token_id, buyer, royalty_amount, platform_fee),
+            (
+                nft_listing_id,
+                nft_listing.nft_token_ref.token_id,
+                buyer,
+                royalty_amount,
+                platform_fee,
+            ),
         );
     }
 
@@ -2531,10 +2538,8 @@ impl Marketplace {
             .instance()
             .set(&Symbol::new(&env, ACCEPTED_CURRENCY_KEY), &accepted);
 
-        env.events().publish(
-            (symbol_short!("ccy_reg"),),
-            (currency_id, symbol, decimals),
-        );
+        env.events()
+            .publish((symbol_short!("ccy_reg"),), (currency_id, symbol, decimals));
 
         currency_id
     }
@@ -2555,10 +2560,8 @@ impl Marketplace {
         env.storage()
             .instance()
             .set(&Self::currency_key(&env, currency_id), &record);
-        env.events().publish(
-            (symbol_short!("ccy_off"),),
-            (currency_id, record.symbol),
-        );
+        env.events()
+            .publish((symbol_short!("ccy_off"),), (currency_id, record.symbol));
     }
 
     /// Get a registered currency by ID.
@@ -2660,23 +2663,27 @@ impl Marketplace {
             panic!("Extension duration must be positive");
         }
         let ext_key = (Symbol::new(&env, "ext_cfg"), auction_id);
-        env.storage().instance().set(&ext_key, &(ext_window, ext_secs));
+        env.storage()
+            .instance()
+            .set(&ext_key, &(ext_window, ext_secs));
 
         env.events().publish(
             (symbol_short!("auc_ext"),),
-            (auction_id, agent_id, start_price, end_time, ext_window, ext_secs),
+            (
+                auction_id,
+                agent_id,
+                start_price,
+                end_time,
+                ext_window,
+                ext_secs,
+            ),
         );
 
         auction_id
     }
 
     /// Place a bid with auto-extension support.
-    pub fn place_bid_with_extension(
-        env: Env,
-        auction_id: u64,
-        bidder: Address,
-        bid_amount: i128,
-    ) {
+    pub fn place_bid_with_extension(env: Env, auction_id: u64, bidder: Address, bid_amount: i128) {
         bidder.require_auth();
         if auction_id == 0 {
             panic!("Invalid auction ID");
@@ -2827,7 +2834,12 @@ impl Marketplace {
 
         env.events().publish(
             (symbol_short!("fee_split"),),
-            (platform_share_bps, creator_share_bps, collection_share_bps, total),
+            (
+                platform_share_bps,
+                creator_share_bps,
+                collection_share_bps,
+                total,
+            ),
         );
     }
 
@@ -4497,12 +4509,7 @@ mod tests {
         env.mock_all_auths();
         let (contract_id, admin) = setup_marketplace(&env);
         let client = MarketplaceClient::new(&env, &contract_id);
-        let ccy_id = client.register_currency(
-            &admin,
-            &String::from_str(&env, "XLM"),
-            &None,
-            &7u32,
-        );
+        let ccy_id = client.register_currency(&admin, &String::from_str(&env, "XLM"), &None, &7u32);
         let record = client.get_currency(&ccy_id);
         assert!(record.active);
         assert!(record.token_address.is_none());
@@ -4520,12 +4527,7 @@ mod tests {
             &Some(Address::generate(&env)),
             &7u32,
         );
-        client.register_currency(
-            &admin,
-            &String::from_str(&env, "XLM"),
-            &None,
-            &7u32,
-        );
+        client.register_currency(&admin, &String::from_str(&env, "XLM"), &None, &7u32);
         let currencies = client.get_accepted_currencies();
         assert_eq!(currencies.len(), 2);
     }
@@ -4628,7 +4630,10 @@ mod tests {
         // First bid: doesn't trigger extension (plenty of time left)
         client.place_bid_with_extension(&auction_id, &bidder, &1_000i128);
         let auction: stellai_lib::Auction = env.as_contract(&contract_id, || {
-            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+            env.storage()
+                .instance()
+                .get(&(String::from_str(&env, "auc_"), auction_id))
+                .unwrap()
         });
         let original_end = auction.end_time;
 
@@ -4642,7 +4647,10 @@ mod tests {
         let bid2 = 1_000i128 + (1_000i128 * 100 / 10_000) + 1;
         client.place_bid_with_extension(&auction_id, &bidder2, &bid2);
         let auction_after: stellai_lib::Auction = env.as_contract(&contract_id, || {
-            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+            env.storage()
+                .instance()
+                .get(&(String::from_str(&env, "auc_"), auction_id))
+                .unwrap()
         });
         // end_time should have been extended by 300 secs
         assert_eq!(auction_after.end_time, original_end + 300);
@@ -4670,7 +4678,10 @@ mod tests {
         // Bid early (plenty of time remaining)
         client.place_bid_with_extension(&auction_id, &bidder, &1_000i128);
         let auction: stellai_lib::Auction = env.as_contract(&contract_id, || {
-            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+            env.storage()
+                .instance()
+                .get(&(String::from_str(&env, "auc_"), auction_id))
+                .unwrap()
         });
         let original_end = auction.end_time;
         // Bid with 10000 secs remaining (outside 300 sec window)
@@ -4681,7 +4692,10 @@ mod tests {
         let bid2 = 1_000i128 + (1_000i128 * 100 / 10_000) + 1;
         client.place_bid_with_extension(&auction_id, &bidder2, &bid2);
         let auction_after: stellai_lib::Auction = env.as_contract(&contract_id, || {
-            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+            env.storage()
+                .instance()
+                .get(&(String::from_str(&env, "auc_"), auction_id))
+                .unwrap()
         });
         assert_eq!(auction_after.end_time, original_end);
     }
@@ -4750,11 +4764,7 @@ mod tests {
         let stranger = Address::generate(&env);
         let client = MarketplaceClient::new(&env, &contract_id);
         let cid = client.create_collection(&creator, &String::from_str(&env, "X"), &0u32);
-        client.set_collection_ipfs_metadata(
-            &stranger,
-            &cid,
-            &String::from_str(&env, "ipfs://bad"),
-        );
+        client.set_collection_ipfs_metadata(&stranger, &cid, &String::from_str(&env, "ipfs://bad"));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4812,9 +4822,8 @@ mod tests {
         let (contract_id, _) = setup_marketplace(&env);
         let random = Address::generate(&env);
         let extra = Vec::new(&env);
-        MarketplaceClient::new(&env, &contract_id).set_fee_splits(
-            &random, &100u32, &100u32, &100u32, &extra,
-        );
+        MarketplaceClient::new(&env, &contract_id)
+            .set_fee_splits(&random, &100u32, &100u32, &100u32, &extra);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4847,7 +4856,10 @@ mod tests {
         // Bidder C outbids (min = 1100 + 11 = 1111)
         client.place_bid(&auction_id, &bidder_c, &1_200i128);
         let auction: stellai_lib::Auction = env.as_contract(&contract_id, || {
-            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+            env.storage()
+                .instance()
+                .get(&(String::from_str(&env, "auc_"), auction_id))
+                .unwrap()
         });
         assert_eq!(auction.highest_bid, 1_200i128);
         assert_eq!(auction.highest_bidder.unwrap(), bidder_c);
@@ -4862,12 +4874,8 @@ mod tests {
         seed_agent(&env, &contract_id, 10100, &seller);
         let client = MarketplaceClient::new(&env, &contract_id);
         let auction_id = client.create_auction(
-            &10100u64,
-            &seller,
-            &1_000i128,
-            &1_000i128, // reserve = start
-            &1u64,
-            &None,
+            &10100u64, &seller, &1_000i128, &1_000i128, // reserve = start
+            &1u64, &None,
         );
         // No bids placed
         env.ledger().with_mut(|l| {
@@ -4876,7 +4884,10 @@ mod tests {
         client.finalize_auction(&auction_id);
         // Agent should be returned to seller
         env.as_contract(&contract_id, || {
-            let ak = (String::from_str(&env, stellai_lib::AGENT_KEY_PREFIX), 10100u64);
+            let ak = (
+                String::from_str(&env, stellai_lib::AGENT_KEY_PREFIX),
+                10100u64,
+            );
             let agent: stellai_lib::Agent = env.storage().instance().get(&ak).unwrap();
             assert_eq!(agent.owner, seller);
             assert!(!agent.escrow_locked);
@@ -4891,14 +4902,8 @@ mod tests {
         let seller = Address::generate(&env);
         seed_agent(&env, &contract_id, 10200, &seller);
         let client = MarketplaceClient::new(&env, &contract_id);
-        let auction_id = client.create_auction(
-            &10200u64,
-            &seller,
-            &1_000i128,
-            &500i128,
-            &30u64,
-            &None,
-        );
+        let auction_id =
+            client.create_auction(&10200u64, &seller, &1_000i128, &500i128, &30u64, &None);
         // Try to finalize too early
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             env.mock_all_auths();
@@ -4918,13 +4923,8 @@ mod tests {
         seed_agent(&env, &contract_id, 11000, &seller);
         let client = MarketplaceClient::new(&env, &contract_id);
         // 1000 -> 0 over 10 seconds
-        let auction_id = client.create_dutch_auction(
-            &11000u64,
-            &seller,
-            &1_000i128,
-            &0i128,
-            &10u64,
-        );
+        let auction_id =
+            client.create_dutch_auction(&11000u64, &seller, &1_000i128, &0i128, &10u64);
 
         // At t=0: price should be 1000
         // At t=5: price should be ~500
@@ -4959,13 +4959,8 @@ mod tests {
         let client = MarketplaceClient::new(&env, &contract_id);
 
         // Test Case 1: start=10000, reserve=0, duration=100s
-        let auction_id = client.create_dutch_auction(
-            &20000u64,
-            &seller,
-            &10_000i128,
-            &0i128,
-            &100u64,
-        );
+        let auction_id =
+            client.create_dutch_auction(&20000u64, &seller, &10_000i128, &0i128, &100u64);
 
         // At t=0: price = 10000 (start)
         // At t=25: price = 7500 (75%)
@@ -4980,7 +4975,10 @@ mod tests {
         let buyer1 = Address::generate(&env);
         client.dutch_buy_now(&auction_id, &buyer1, &5_000i128);
         let auction: stellai_lib::Auction = env.as_contract(&contract_id, || {
-            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+            env.storage()
+                .instance()
+                .get(&(String::from_str(&env, "auc_"), auction_id))
+                .unwrap()
         });
         assert_eq!(auction.status, stellai_lib::AuctionStatus::Won);
     }
@@ -4997,13 +4995,8 @@ mod tests {
 
         // start=1000, reserve=500, duration=10s
         // Decay rate = (1000-500)/10 = 50 per second
-        let auction_id = client.create_dutch_auction(
-            &20100u64,
-            &seller,
-            &1_000i128,
-            &500i128,
-            &10u64,
-        );
+        let auction_id =
+            client.create_dutch_auction(&20100u64, &seller, &1_000i128, &500i128, &10u64);
 
         // At t=5: price = 1000 - 50*5 = 750
         env.ledger().with_mut(|l| {
@@ -5051,13 +5044,8 @@ mod tests {
         let client = MarketplaceClient::new(&env, &contract_id);
 
         // 1 second duration: immediate buy at start price
-        let auction_id = client.create_dutch_auction(
-            &20300u64,
-            &seller,
-            &1_000i128,
-            &100i128,
-            &1u64,
-        );
+        let auction_id =
+            client.create_dutch_auction(&20300u64, &seller, &1_000i128, &100i128, &1u64);
 
         env.ledger().with_mut(|l| {
             l.timestamp = 0;
@@ -5077,13 +5065,8 @@ mod tests {
         let client = MarketplaceClient::new(&env, &contract_id);
 
         // start=reserve: price stays constant
-        let auction_id = client.create_dutch_auction(
-            &20400u64,
-            &seller,
-            &5_000i128,
-            &5_000i128,
-            &5u64,
-        );
+        let auction_id =
+            client.create_dutch_auction(&20400u64, &seller, &5_000i128, &5_000i128, &5u64);
 
         // Buy at any time with exact price
         env.ledger().with_mut(|l| {
@@ -5105,13 +5088,8 @@ mod tests {
         let client = MarketplaceClient::new(&env, &contract_id);
 
         // start=1000, reserve=0, duration=10s
-        let auction_id = client.create_dutch_auction(
-            &20500u64,
-            &seller,
-            &1_000i128,
-            &0i128,
-            &10u64,
-        );
+        let auction_id =
+            client.create_dutch_auction(&20500u64, &seller, &1_000i128, &0i128, &10u64);
 
         // At t=0: price=1000, bid 999 should fail
         env.ledger().with_mut(|l| {
@@ -5133,13 +5111,8 @@ mod tests {
         let client = MarketplaceClient::new(&env, &contract_id);
 
         // start=1000, reserve=500, duration=10s
-        let auction_id = client.create_dutch_auction(
-            &20600u64,
-            &seller,
-            &1_000i128,
-            &500i128,
-            &10u64,
-        );
+        let auction_id =
+            client.create_dutch_auction(&20600u64, &seller, &1_000i128, &500i128, &10u64);
 
         // At t=9: decayed price = 1000 - 50*9 = 550, but bid 540 < 500 reserve
         env.ledger().with_mut(|l| {
@@ -5160,13 +5133,7 @@ mod tests {
         seed_agent(&env, &contract_id, 20700, &seller);
         let client = MarketplaceClient::new(&env, &contract_id);
 
-        let auction_id = client.create_dutch_auction(
-            &20700u64,
-            &seller,
-            &1_000i128,
-            &0i128,
-            &5u64,
-        );
+        let auction_id = client.create_dutch_auction(&20700u64, &seller, &1_000i128, &0i128, &5u64);
 
         // After end_time
         env.ledger().with_mut(|l| {
@@ -5188,14 +5155,8 @@ mod tests {
         let client = MarketplaceClient::new(&env, &contract_id);
 
         // Create English auction
-        let auction_id = client.create_auction(
-            &20800u64,
-            &seller,
-            &1_000i128,
-            &500i128,
-            &5u64,
-            &None,
-        );
+        let auction_id =
+            client.create_auction(&20800u64, &seller, &1_000i128, &500i128, &5u64, &None);
 
         // Try to buy as Dutch
         let buyer = Address::generate(&env);
