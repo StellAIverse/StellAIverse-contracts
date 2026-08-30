@@ -169,6 +169,7 @@ pub struct CurrencyRecord {
 pub struct Marketplace;
 
 #[contractimpl]
+#[allow(clippy::too_many_arguments)]
 impl Marketplace {
     // =========================================================================
     // Initialisation
