@@ -18,6 +18,7 @@ members = [
     "contracts/vault",
     "contracts/portfolio-manager",
     "contracts/prediction-markets",
+    "contracts/insurance-protocol",
     "lib",
     "shared",
 ]
