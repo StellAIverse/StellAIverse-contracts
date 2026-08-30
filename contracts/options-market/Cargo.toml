@@ -1,0 +1,16 @@
+[package]
+name = "options-market"
+version = "0.1.0"
+description = "Decentralized options trading protocol with Black-Scholes pricing, Greeks calculations, and risk management"
+authors = ["StellAIverse Team"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellai_lib = { path = "../../lib" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
