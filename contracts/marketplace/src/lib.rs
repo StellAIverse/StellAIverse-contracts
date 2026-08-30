@@ -145,19 +145,19 @@ pub struct NftListing {
     pub nft_token_ref: stellai_lib::NftTokenRef,
     pub seller: Address,
     pub price: i128,
-    pub currency_symbol: soroban_sdk::String,
+    pub currency_symbol: String,
     pub currency_token_address: Option<Address>,
     pub active: bool,
     pub created_at: u64,
     pub expires_at: u64,
-    pub metadata_uri: soroban_sdk::String, // IPFS CID for NFT metadata
+    pub metadata_uri: String, // IPFS CID for NFT metadata
 }
 
 #[derive(Clone)]
 #[soroban_sdk::contracttype]
 pub struct CurrencyRecord {
     pub currency_id: u64,
-    pub symbol: soroban_sdk::String,
+    pub symbol: String,
     pub token_address: Option<Address>,
     pub decimals: u32,
     pub active: bool,
@@ -2357,10 +2357,10 @@ impl Marketplace {
         nft_token_ref: stellai_lib::NftTokenRef,
         seller: Address,
         price: i128,
-        currency_symbol: soroban_sdk::String,
+        currency_symbol: String,
         currency_token_address: Option<Address>,
         duration_days: Option<u64>,
-        metadata_uri: soroban_sdk::String,
+        metadata_uri: String,
     ) -> u64 {
         seller.require_auth();
         if price <= 0 || price > stellai_lib::PRICE_UPPER_BOUND {
@@ -2497,7 +2497,7 @@ impl Marketplace {
     pub fn register_currency(
         env: Env,
         admin: Address,
-        symbol: soroban_sdk::String,
+        symbol: String,
         token_address: Option<Address>,
         decimals: u32,
     ) -> u64 {
@@ -2521,7 +2521,7 @@ impl Marketplace {
         let ck = Self::currency_key(&env, currency_id);
         env.storage().instance().set(&ck, &record);
 
-        let mut accepted: Vec<soroban_sdk::String> = env
+        let mut accepted: Vec<String> = env
             .storage()
             .instance()
             .get(&Symbol::new(&env, ACCEPTED_CURRENCY_KEY))
@@ -2570,7 +2570,7 @@ impl Marketplace {
     }
 
     /// Get all accepted currency symbols.
-    pub fn get_accepted_currencies(env: Env) -> Vec<soroban_sdk::String> {
+    pub fn get_accepted_currencies(env: Env) -> Vec<String> {
         env.storage()
             .instance()
             .get(&Symbol::new(&env, ACCEPTED_CURRENCY_KEY))
@@ -2764,7 +2764,7 @@ impl Marketplace {
         env: Env,
         creator: Address,
         collection_id: u64,
-        metadata_uri: soroban_sdk::String,
+        metadata_uri: String,
     ) {
         creator.require_auth();
         if collection_id == 0 {
@@ -2783,7 +2783,7 @@ impl Marketplace {
     }
 
     /// Get IPFS metadata URI for a collection.
-    pub fn get_collection_ipfs_metadata(env: Env, collection_id: u64) -> Option<soroban_sdk::String> {
+    pub fn get_collection_ipfs_metadata(env: Env, collection_id: u64) -> Option<String> {
         let ipfs_key = Self::ipfs_metadata_key(&env, collection_id);
         env.storage().instance().get(&ipfs_key)
     }
@@ -4254,5 +4254,803 @@ mod tests {
         let client = MarketplaceClient::new(&env, &contract_id);
         client.assign_marketplace_kyc_operator(&admin, &kyc);
         client.remove_marketplace_kyc_operator(&admin, &kyc);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // NFT LISTINGS — ERC721/ERC1155 + configurable currency
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_create_nft_listing() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: None,
+            token_id: 42,
+            standard: stellai_lib::NftStandard::SorobanNative,
+        };
+        let listing_id = client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &1_000_000i128,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &None,
+            &String::from_str(&env, "ipfs://Qm123"),
+        );
+        assert_eq!(listing_id, 1u64);
+        let listing = client.get_nft_listing(&listing_id);
+        assert!(listing.active);
+        assert_eq!(listing.seller, seller);
+        assert_eq!(listing.price, 1_000_000i128);
+    }
+
+    #[test]
+    fn test_create_nft_listing_erc721() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let nft_contract = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: Some(nft_contract),
+            token_id: 100,
+            standard: stellai_lib::NftStandard::Erc721,
+        };
+        let listing_id = client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &5_000i128,
+            &String::from_str(&env, "USDC"),
+            &Some(Address::generate(&env)),
+            &Some(7u64),
+            &String::from_str(&env, "ipfs://Qm456"),
+        );
+        let listing = client.get_nft_listing(&listing_id);
+        assert!(listing.active);
+        assert_eq!(listing.price, 5_000i128);
+    }
+
+    #[test]
+    fn test_create_nft_listing_erc1155() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let nft_contract = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: Some(nft_contract),
+            token_id: 200,
+            standard: stellai_lib::NftStandard::Erc1155,
+        };
+        let listing_id = client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &10_000i128,
+            &String::from_str(&env, "USDC"),
+            &None,
+            &None,
+            &String::from_str(&env, "ipfs://Qm789"),
+        );
+        let listing = client.get_nft_listing(&listing_id);
+        assert!(listing.active);
+    }
+
+    #[test]
+    fn test_buy_nft_listing() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: None,
+            token_id: 50,
+            standard: stellai_lib::NftStandard::SorobanNative,
+        };
+        let listing_id = client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &1_000i128,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &None,
+            &String::from_str(&env, "ipfs://test"),
+        );
+        client.buy_nft_listing(&listing_id, &buyer, &1_000i128);
+        assert!(!client.get_nft_listing(&listing_id).active);
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient payment")]
+    fn test_buy_nft_listing_insufficient_payment() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: None,
+            token_id: 51,
+            standard: stellai_lib::NftStandard::SorobanNative,
+        };
+        let listing_id = client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &1_000i128,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &None,
+            &String::from_str(&env, "ipfs://test"),
+        );
+        client.buy_nft_listing(&listing_id, &buyer, &500i128);
+    }
+
+    #[test]
+    fn test_cancel_nft_listing() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: None,
+            token_id: 52,
+            standard: stellai_lib::NftStandard::SorobanNative,
+        };
+        let listing_id = client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &1_000i128,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &None,
+            &String::from_str(&env, "ipfs://test"),
+        );
+        assert!(client.get_nft_listing(&listing_id).active);
+        client.cancel_nft_listing(&listing_id, &seller);
+        assert!(!client.get_nft_listing(&listing_id).active);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only seller can cancel NFT listing")]
+    fn test_cancel_nft_listing_wrong_seller() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: None,
+            token_id: 53,
+            standard: stellai_lib::NftStandard::SorobanNative,
+        };
+        let listing_id = client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &1_000i128,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &None,
+            &String::from_str(&env, "ipfs://test"),
+        );
+        client.cancel_nft_listing(&listing_id, &stranger);
+    }
+
+    #[test]
+    #[should_panic(expected = "Price out of valid range")]
+    fn test_nft_listing_zero_price_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: None,
+            token_id: 54,
+            standard: stellai_lib::NftStandard::SorobanNative,
+        };
+        client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &0i128,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &None,
+            &String::from_str(&env, "ipfs://test"),
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONFIGURABLE CURRENCY
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_register_currency() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let ccy_id = client.register_currency(
+            &admin,
+            &String::from_str(&env, "USDC"),
+            &Some(Address::generate(&env)),
+            &7u32,
+        );
+        assert_eq!(ccy_id, 1u64);
+        let record = client.get_currency(&ccy_id);
+        assert!(record.active);
+        assert_eq!(record.decimals, 7u32);
+    }
+
+    #[test]
+    fn test_register_xlm_currency() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let ccy_id = client.register_currency(
+            &admin,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &7u32,
+        );
+        let record = client.get_currency(&ccy_id);
+        assert!(record.active);
+        assert!(record.token_address.is_none());
+    }
+
+    #[test]
+    fn test_get_accepted_currencies() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        client.register_currency(
+            &admin,
+            &String::from_str(&env, "USDC"),
+            &Some(Address::generate(&env)),
+            &7u32,
+        );
+        client.register_currency(
+            &admin,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &7u32,
+        );
+        let currencies = client.get_accepted_currencies();
+        assert_eq!(currencies.len(), 2);
+    }
+
+    #[test]
+    fn test_deactivate_currency() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let ccy_id = client.register_currency(
+            &admin,
+            &String::from_str(&env, "DAI"),
+            &Some(Address::generate(&env)),
+            &18u32,
+        );
+        client.deactivate_currency(&admin, &ccy_id);
+        let record = client.get_currency(&ccy_id);
+        assert!(!record.active);
+    }
+
+    #[test]
+    #[should_panic(expected = "Currency symbol required")]
+    fn test_register_currency_empty_symbol() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        MarketplaceClient::new(&env, &contract_id).register_currency(
+            &admin,
+            &String::from_str(&env, ""),
+            &None,
+            &7u32,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Decimals cannot exceed 18")]
+    fn test_register_currency_too_many_decimals() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        MarketplaceClient::new(&env, &contract_id).register_currency(
+            &admin,
+            &String::from_str(&env, "BAD"),
+            &None,
+            &19u32,
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AUCTION AUTO-EXTENSION
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_create_auction_with_extension() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        seed_agent(&env, &contract_id, 9000, &seller);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let auction_id = client.create_auction_with_extension(
+            &9000u64,
+            &seller,
+            &1_000i128,
+            &500i128,
+            &1u64,
+            &Some(100u32),
+            &Some(600u64),
+            &Some(300u64),
+        );
+        assert!(auction_id > 0);
+        let config = client.get_auction_extension_config(&auction_id);
+        assert!(config.is_some());
+        let (window, extension) = config.unwrap();
+        assert_eq!(window, 600u64);
+        assert_eq!(extension, 300u64);
+    }
+
+    #[test]
+    fn test_bid_with_auto_extension() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let bidder = Address::generate(&env);
+        seed_agent(&env, &contract_id, 9100, &seller);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        // Create auction with 1-day duration
+        let auction_id = client.create_auction_with_extension(
+            &9100u64,
+            &seller,
+            &1_000i128,
+            &500i128,
+            &1u64,
+            &Some(100u32),
+            &Some(600u64), // extension window
+            &Some(300u64), // extension duration
+        );
+        // First bid: doesn't trigger extension (plenty of time left)
+        client.place_bid_with_extension(&auction_id, &bidder, &1_000i128);
+        let auction: stellai_lib::Auction = env.as_contract(&contract_id, || {
+            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+        });
+        let original_end = auction.end_time;
+
+        // Advance time to within extension window (600 secs from end)
+        env.ledger().with_mut(|l| {
+            l.timestamp = original_end - 300;
+        });
+        let bidder2 = Address::generate(&env);
+        seed_agent(&env, &contract_id, 9101, &bidder2);
+        // Note: bidder2 needs to bid high enough to meet min increment
+        let bid2 = 1_000i128 + (1_000i128 * 100 / 10_000) + 1;
+        client.place_bid_with_extension(&auction_id, &bidder2, &bid2);
+        let auction_after: stellai_lib::Auction = env.as_contract(&contract_id, || {
+            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+        });
+        // end_time should have been extended by 300 secs
+        assert_eq!(auction_after.end_time, original_end + 300);
+    }
+
+    #[test]
+    fn test_bid_outside_extension_window_no_extend() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let bidder = Address::generate(&env);
+        seed_agent(&env, &contract_id, 9200, &seller);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let auction_id = client.create_auction_with_extension(
+            &9200u64,
+            &seller,
+            &1_000i128,
+            &500i128,
+            &1u64,
+            &Some(100u32),
+            &Some(300u64), // extension window
+            &Some(300u64),
+        );
+        // Bid early (plenty of time remaining)
+        client.place_bid_with_extension(&auction_id, &bidder, &1_000i128);
+        let auction: stellai_lib::Auction = env.as_contract(&contract_id, || {
+            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+        });
+        let original_end = auction.end_time;
+        // Bid with 10000 secs remaining (outside 300 sec window)
+        env.ledger().with_mut(|l| {
+            l.timestamp = 100;
+        });
+        let bidder2 = Address::generate(&env);
+        let bid2 = 1_000i128 + (1_000i128 * 100 / 10_000) + 1;
+        client.place_bid_with_extension(&auction_id, &bidder2, &bid2);
+        let auction_after: stellai_lib::Auction = env.as_contract(&contract_id, || {
+            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+        });
+        assert_eq!(auction_after.end_time, original_end);
+    }
+
+    #[test]
+    #[should_panic(expected = "Extension duration must be positive")]
+    fn test_create_auction_zero_extension_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        seed_agent(&env, &contract_id, 9300, &seller);
+        MarketplaceClient::new(&env, &contract_id).create_auction_with_extension(
+            &9300u64,
+            &seller,
+            &1_000i128,
+            &500i128,
+            &1u64,
+            &Some(100u32),
+            &Some(300u64),
+            &Some(0u64),
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // IPFS METADATA FOR COLLECTIONS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_set_collection_ipfs_metadata() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let creator = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let cid = client.create_collection(&creator, &String::from_str(&env, "Test"), &0u32);
+        client.set_collection_ipfs_metadata(
+            &creator,
+            &cid,
+            &String::from_str(&env, "ipfs://QmCollectionMetadata123"),
+        );
+        let uri = client.get_collection_ipfs_metadata(&cid);
+        assert!(uri.is_some());
+        assert_eq!(
+            uri.unwrap(),
+            String::from_str(&env, "ipfs://QmCollectionMetadata123")
+        );
+    }
+
+    #[test]
+    fn test_get_ipfs_metadata_nonexistent() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let uri = MarketplaceClient::new(&env, &contract_id).get_collection_ipfs_metadata(&999u64);
+        assert!(uri.is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "Only creator can set collection metadata")]
+    fn test_set_ipfs_metadata_wrong_creator() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let creator = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let cid = client.create_collection(&creator, &String::from_str(&env, "X"), &0u32);
+        client.set_collection_ipfs_metadata(
+            &stranger,
+            &cid,
+            &String::from_str(&env, "ipfs://bad"),
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GOVERNANCE-CONTROLLED FEE SPLITS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_set_fee_splits() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let extra = Vec::new(&env);
+        client.set_fee_splits(&admin, &250u32, &50u32, &25u32, &extra);
+        let config = client.get_fee_splits().unwrap();
+        assert_eq!(config.platform_share_bps, 250);
+        assert_eq!(config.creator_share_bps, 50);
+        assert_eq!(config.collection_share_bps, 25);
+        assert_eq!(config.total_bps, 325);
+    }
+
+    #[test]
+    fn test_set_fee_splits_with_extra_recipients() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let mut extra = Vec::new(&env);
+        extra.push_back(stellai_lib::FeeSplitRecipient {
+            recipient: Address::generate(&env),
+            share_bps: 100,
+        });
+        client.set_fee_splits(&admin, &200u32, &50u32, &25u32, &extra);
+        let config = client.get_fee_splits().unwrap();
+        assert_eq!(config.total_bps, 375);
+        assert_eq!(config.extra_recipients.len(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Total fee shares exceed 100%")]
+    fn test_fee_splits_exceed_100_percent() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let extra = Vec::new(&env);
+        client.set_fee_splits(&admin, &5000u32, &3000u32, &2500u32, &extra);
+    }
+
+    #[test]
+    #[should_panic(expected = "Unauthorized")]
+    fn test_set_fee_splits_admin_only() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let random = Address::generate(&env);
+        let extra = Vec::new(&env);
+        MarketplaceClient::new(&env, &contract_id).set_fee_splits(
+            &random, &100u32, &100u32, &100u32, &extra,
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AUCTION EDGE CASES — multiple bidders, extensions, finalization
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_english_auction_multiple_bidders() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let bidder_a = Address::generate(&env);
+        let bidder_b = Address::generate(&env);
+        let bidder_c = Address::generate(&env);
+        seed_agent(&env, &contract_id, 10000, &seller);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let auction_id = client.create_auction(
+            &10000u64,
+            &seller,
+            &1_000i128,
+            &500i128,
+            &1u64,
+            &Some(100u32),
+        );
+        // Bidder A bids at start price
+        client.place_bid(&auction_id, &bidder_a, &1_000i128);
+        // Bidder B outbids (1% increment = 10, so min is 1010)
+        client.place_bid(&auction_id, &bidder_b, &1_100i128);
+        // Bidder C outbids (min = 1100 + 11 = 1111)
+        client.place_bid(&auction_id, &bidder_c, &1_200i128);
+        let auction: stellai_lib::Auction = env.as_contract(&contract_id, || {
+            env.storage().instance().get(&(String::from_str(&env, "auc_"), auction_id)).unwrap()
+        });
+        assert_eq!(auction.highest_bid, 1_200i128);
+        assert_eq!(auction.highest_bidder.unwrap(), bidder_c);
+    }
+
+    #[test]
+    fn test_english_auction_finalize_reserve_not_met() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        seed_agent(&env, &contract_id, 10100, &seller);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let auction_id = client.create_auction(
+            &10100u64,
+            &seller,
+            &1_000i128,
+            &1_000i128, // reserve = start
+            &1u64,
+            &None,
+        );
+        // No bids placed
+        env.ledger().with_mut(|l| {
+            l.timestamp = 86401;
+        });
+        client.finalize_auction(&auction_id);
+        // Agent should be returned to seller
+        env.as_contract(&contract_id, || {
+            let ak = (String::from_str(&env, stellai_lib::AGENT_KEY_PREFIX), 10100u64);
+            let agent: stellai_lib::Agent = env.storage().instance().get(&ak).unwrap();
+            assert_eq!(agent.owner, seller);
+            assert!(!agent.escrow_locked);
+        });
+    }
+
+    #[test]
+    fn test_finalize_auction_not_ended_yet() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        seed_agent(&env, &contract_id, 10200, &seller);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let auction_id = client.create_auction(
+            &10200u64,
+            &seller,
+            &1_000i128,
+            &500i128,
+            &30u64,
+            &None,
+        );
+        // Try to finalize too early
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            env.mock_all_auths();
+            let client2 = MarketplaceClient::new(&env, &contract_id);
+            client2.finalize_auction(&auction_id);
+        }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dutch_auction_price_decay_accuracy() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        seed_agent(&env, &contract_id, 11000, &seller);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        // 1000 -> 0 over 10 seconds
+        let auction_id = client.create_dutch_auction(
+            &11000u64,
+            &seller,
+            &1_000i128,
+            &0i128,
+            &10u64,
+        );
+
+        // At t=0: price should be 1000
+        // At t=5: price should be ~500
+        // At t=10: price should be 0 (reserve)
+
+        // Buy at start (full price)
+        env.ledger().with_mut(|l| {
+            l.timestamp = 1;
+        });
+        client.dutch_buy_now(&auction_id, &buyer, &1_000i128);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COMPREHENSIVE INTEGRATION SCENARIOS
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_full_nft_lifecycle_create_buy_cancel() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, admin) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let buyer = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+
+        // Register currency
+        client.register_currency(
+            &admin,
+            &String::from_str(&env, "USDC"),
+            &Some(Address::generate(&env)),
+            &7u32,
+        );
+
+        // Create NFT listing
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: Some(Address::generate(&env)),
+            token_id: 999,
+            standard: stellai_lib::NftStandard::Erc721,
+        };
+        let listing_id = client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &10_000i128,
+            &String::from_str(&env, "USDC"),
+            &Some(Address::generate(&env)),
+            &Some(30u64),
+            &String::from_str(&env, "ipfs://QmNFT999"),
+        );
+
+        // Buy
+        client.buy_nft_listing(&listing_id, &buyer, &10_000i128);
+        assert!(!client.get_nft_listing(&listing_id).active);
+    }
+
+    #[test]
+    fn test_collection_with_ipfs_and_royalty() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let creator = Address::generate(&env);
+        let alice = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+
+        // Create collection
+        let cid = client.create_collection(&creator, &String::from_str(&env, "ArtDrop"), &0u32);
+
+        // Set IPFS metadata
+        client.set_collection_ipfs_metadata(
+            &creator,
+            &cid,
+            &String::from_str(&env, "ipfs://QmArtDropMeta"),
+        );
+
+        // Set royalty split
+        let mut recipients = Vec::new(&env);
+        recipients.push_back(RoyaltyRecipient {
+            recipient: alice.clone(),
+            share_bps: 700u32,
+            role: String::from_str(&env, "creator"),
+        });
+        client.set_collection_royalty(&creator, &cid, &recipients, &700u32);
+
+        // Verify
+        let coll = client.get_collection(&cid);
+        assert_eq!(coll.royalty_config.total_bps, 700);
+        let uri = client.get_collection_ipfs_metadata(&cid).unwrap();
+        assert_eq!(uri, String::from_str(&env, "ipfs://QmArtDropMeta"));
+    }
+
+    #[test]
+    fn test_batch_nft_operations() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (contract_id, _) = setup_marketplace(&env);
+        let seller = Address::generate(&env);
+        let client = MarketplaceClient::new(&env, &contract_id);
+        let nft_ref = stellai_lib::NftTokenRef {
+            contract_address: None,
+            token_id: 300,
+            standard: stellai_lib::NftStandard::SorobanNative,
+        };
+        // Create multiple NFT listings
+        let id1 = client.create_nft_listing(
+            &nft_ref,
+            &seller,
+            &1_000i128,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &None,
+            &String::from_str(&env, "ipfs://1"),
+        );
+        let nft_ref2 = stellai_lib::NftTokenRef {
+            contract_address: None,
+            token_id: 301,
+            standard: stellai_lib::NftStandard::SorobanNative,
+        };
+        let id2 = client.create_nft_listing(
+            &nft_ref2,
+            &seller,
+            &2_000i128,
+            &String::from_str(&env, "XLM"),
+            &None,
+            &None,
+            &String::from_str(&env, "ipfs://2"),
+        );
+        assert!(client.get_nft_listing(&id1).active);
+        assert!(client.get_nft_listing(&id2).active);
     }
 }
