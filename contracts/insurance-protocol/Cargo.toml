@@ -1,0 +1,15 @@
+[package]
+name = "insurance-protocol"
+version = "0.1.0"
+description = "Decentralized insurance protocol for coverage and claims management on Soroban"
+authors = ["StellAIverse Team"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
