@@ -2352,6 +2352,7 @@ impl Marketplace {
     // ==========================================================================
 
     /// Create a listing for an NFT with configurable currency support.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_nft_listing(
         env: Env,
         nft_token_ref: stellai_lib::NftTokenRef,
@@ -2585,6 +2586,7 @@ impl Marketplace {
     // ==========================================================================
 
     /// Create an English auction with configurable auto-extension.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_auction_with_extension(
         env: Env,
         agent_id: u64,
