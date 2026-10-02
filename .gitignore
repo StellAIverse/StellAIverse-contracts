@@ -6,7 +6,6 @@ Cargo.lock
 
 # IDE
 .idea/
-.vscode/
 *.swp
 *.swo
 *~
@@ -18,3 +17,5 @@ test_snapshots/
 
 # Project issues
 issues.md
+config.bat
+node_modules
